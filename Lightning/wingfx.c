@@ -346,10 +346,22 @@ typedef struct GraphicsBuffer{
 
     uint32_t sizeofdata;
     uint32_t sizeondevice;
+    VkBufferUsageFlags usage;
+    VkMemoryPropertyFlags properties;
+
+} GraphicsBuffer;
+
+/*
+typedef struct StackedBuffer {
+    BA buffers; // VkBuffer
+    VkDeviceMemory memory;
+
+    uint32_t sizeofdata, sizeondevice;
 
     VkBufferUsageFlags usage;
     VkMemoryPropertyFlags properties;
-} GraphicsBuffer;
+} StackedBuffer;
+*/
 
 typedef struct UniformBuffer {
     GraphicsBuffer buf;
@@ -365,10 +377,13 @@ typedef struct DrawerDef {
     VkDescriptorSetLayout disclayout;
     
     void *discdata;
+
+    GraphicsBuffer discs;
 } DrawerDef;
 
 typedef struct DrawableDef {
     uint32_t ref;
+    Drawer drawer;
 } DrawableDef;
 
 static struct Graphics_instance{
@@ -418,7 +433,7 @@ typedef struct MeshMemory{
     bool visable; DrawableDef dr;
 } MeshMemory;
 struct {
-    GraphicsBuffer vtx, ind, trs, mat;
+    GraphicsBuffer vtx, ind;
     MeshMemory vtxmem; bool memupdated;
     ECS_t refs, transforms;
 } bufman;
@@ -447,7 +462,7 @@ Return_t CreateUiBuffers();
 
 void UpdateVertexBuffer( MeshResource_t t, uint32_t offset );
 void UpdateIndexBuffer( MeshResource_t t, uint32_t offset );
-Return_t UpdateTransformBuffer( Matrix *ms, uint32_t trscount, uint32_t offset );
+// Return_t UpdateTransformBuffer( Matrix *ms, uint32_t trscount, uint32_t offset );
 
 bool CheckSuitabilityOfDevice( VkPhysicalDevice dev, VkSurfaceKHR sur, uint32_t *graphics, uint32_t *present ){
     uint32_t g, p;
@@ -551,17 +566,30 @@ void DestroyBuffer( GraphicsBuffer *buffer ){
     vkFreeMemory( gfx.device, buffer->memory, 0 );
 }
 
-void UniformBufferCreate( Drawer dr, uint32_t resi ){
-    if (!dr) return;
-    printf("okay starting uniform creation");
+/* OVERCOMPLICATED?
+void StackedBufferCreate(StackedBuffer *bufs, uint32_t *sizes, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties){
+    uint32_t totalsize = 0;
+    uint32_t bufcount = 0;
+    while (sizes[bufcount]){
+        totalsize += sizes[bufcount];
+        ++bufcount;
+    }
 
-    if (dr)
+    bufs->buffers = BACreate(sizeof(VkBuffer), bufcount);
+    VkBufferCreateInfo bci = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = 0,
+        .flags = 0,
+        .size = 0, // To be set in following loop
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+    for (uint32_t i = 0; i < bufcount; ++i){
+        bci.size = sizes[i];
+        VkCreateBuffer( gfx.device, &bci, 0, BAGetPointer( bufs->buffers, 0 ) );
+    }
 
-
-    
-
-    return; /* Successful */
 }
+*/
 
 Return_t InitGraphics( ){
     Return_t r;
@@ -1132,49 +1160,7 @@ Return_t CreateBuffers( ){
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-    // bufman.indmem = (MeshMemory){
-    //     0, 0,
-    //     0, 0
-    // };
-
-    CreateBuffer(
-        &bufman.trs,
-        1024 * sizeof(Matrix),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-    );
-    VkDescriptorSetLayout uniformlayouts[] = {
-        gfx.uniformlayout
-    };
-    VkDescriptorSetAllocateInfo sdai = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .pNext = 0,
-        .descriptorPool = gfx.descriptorpool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = uniformlayouts
-    };
-    if (vkAllocateDescriptorSets( gfx.device, &sdai, &gfx.uniform ) != VK_SUCCESS) {
-        printf("Couldn't allocate descriptor set for transforms!\n");
-    }
-    VkDescriptorBufferInfo bufferInfo = {
-        .buffer = bufman.trs.buffer,
-        .offset = 0,
-        .range = sizeof(Matrix) * 1024
-    };
-    VkWriteDescriptorSet descriptorWrite = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = 0,
-        .dstSet = gfx.uniform,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .pImageInfo = 0,
-        .pBufferInfo = &bufferInfo,
-        .pTexelBufferView = 0
-    };
-    vkUpdateDescriptorSets( gfx.device, 1, &descriptorWrite, 0, 0 );
-
+    
     return 0;
 }
 
@@ -1254,7 +1240,7 @@ Return_t CreateImageSamplers( ){
     void *texdata;
     vkMapMemory( gfx.device, interbuffer.memory, 0, texsize, 0, &texdata );
         memcpy(texdata, readimage.data, texsize);
-    printf("got here, memory set!\n");
+    printf("got here, memory set! %d\n", __LINE__);
     vkUnmapMemory(gfx.device, interbuffer.memory);
 
     VkCommandBuffer intercommand;
@@ -1731,14 +1717,15 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     }
 
     /* Uniform Buffers */
+    
     CreateBuffer(
-        &bufman.trs,
+        &currdraw->discs,
         1024 * sizeof(Matrix),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     );
     VkDescriptorBufferInfo bufferInfo = {
-        .buffer = bufman.trs.buffer,
+        .buffer = currdraw->discs.buffer,
         .offset = 0,
         .range = sizeof(Matrix) * 1024
     };
@@ -1832,7 +1819,6 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     void *texdata;
     vkMapMemory( gfx.device, interbuffer.memory, 0, texsize, 0, &texdata );
         memcpy(texdata, readimage.data, texsize);
-    printf("got here, memory set!\n");
     vkUnmapMemory(gfx.device, interbuffer.memory);
 
     VkCommandBuffer intercommand;
@@ -2164,12 +2150,12 @@ void UpdateIndexBuffer( MeshResource_t t, uint32_t offset ){
     vkQueueWaitIdle(gfx.graphics);
     DestroyBuffer( &interbuffer );
 }
-Return_t UpdateTransformBuffer( Matrix *ms, uint32_t trscount, uint32_t offset ){
+Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t size, uint32_t offset ){
     void* mappeddata;
-    vkMapMemory( gfx.device, bufman.trs.memory, 0, bufman.trs.sizeondevice, 0, &mappeddata);
-    Matrix *mapto = (Matrix *)mappeddata; mapto = mapto + offset;
-    memcpy(mapto, ms, sizeof(Matrix) * trscount);
-    vkUnmapMemory(gfx.device, bufman.trs.memory);
+    vkMapMemory( gfx.device, dr->discs.memory, 0, dr->discs.sizeondevice, 0, &mappeddata);
+    void *mapto = mappeddata + offset;
+    memcpy(mapto, data, size);
+    vkUnmapMemory(gfx.device, dr->discs.memory);
     
     return 0;
 }
@@ -2225,6 +2211,8 @@ Drawable CreateDrawable( RegisterDrawableInfo rdi ){
 
     free( rdi.mesh.vertdata );
     free( rdi.mesh.inddata );
+
+    dr->drawer = rdi.drawer;
     return dr;
 }
 Return_t DrawableSetVisability( Drawable dr, bool vis ){
@@ -2251,7 +2239,8 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
 
     uint32_t trsid = *(uint32_t *)ECS_Get( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "t" ) );
 
-    return UpdateTransformBuffer( &m, 1, trsid );
+    printf("got here, memory set! %d wajefs %d\n", __LINE__, trsid);
+    return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), trsid * sizeof(Matrix) );
 }
 
 

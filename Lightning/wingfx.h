@@ -89,6 +89,8 @@ DRAWABLE STRUCT
 These represent the data to be passed and processed by a Drawer.
 */
 typedef struct DrawableDef *Drawable;
+typedef struct DrawerDef *Drawer;
+
 typedef struct Vertex{
     Vector3 pos;
     Vector3 nrm;
@@ -106,6 +108,7 @@ typedef struct {
     Matrix transform;
 
     uint32_t usememory; // 0 means default memory block (only implemented option)
+    Drawer drawer;
 } RegisterDrawableInfo;
 
 Drawable CreateDrawable( RegisterDrawableInfo rdi );
@@ -171,7 +174,6 @@ typedef struct DrawerCreateInfo {
     DrawerDrawMethodEnum drawmethod;
     bool transparency;
 } DrawerCreateInfo;
-typedef struct DrawerDef *Drawer;
 Drawer DrawerCreate( DrawerCreateInfo dci );
 
 uint32_t DataTypeToSize( DrawerDataEnum dde );

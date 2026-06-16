@@ -49,7 +49,7 @@ int main(){
         .transparency = true
     };
     Drawer worlddrawer = DrawerCreate( dci );
-   
+
     /*
     DrawerVertexInfo dvi2[] = {
         {0, 0, DDE_float2},
@@ -89,11 +89,11 @@ int main(){
 
     RegisterDrawableInfo mapregister = {
         Mesh_CreateQuad( MatrixIdentity(), 0, 0 ), true,
-        MatrixRotateX(3.14159 / 2.0)
+        MatrixRotateX(3.14159 / 2.0), 0, worlddrawer
     };
     RegisterDrawableInfo testerreg = {
         Mesh_CreateQuad( MatrixIdentity(), 0, 0 ), true,
-        MatrixIdentity()
+        MatrixIdentity(), 0, worlddrawer
     };
     Drawable mapdrawable = CreateDrawable( mapregister );
     Drawable testdrawable = CreateDrawable( testerreg );
