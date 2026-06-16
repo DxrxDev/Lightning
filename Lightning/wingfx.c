@@ -351,9 +351,20 @@ typedef struct GraphicsBuffer{
     VkMemoryPropertyFlags properties;
 } GraphicsBuffer;
 
+typedef struct UniformBuffer {
+    GraphicsBuffer buf;
+    uint32_t bin, loc;
+} UniformBuffer;
+
 typedef struct DrawerDef {
     VkPipeline pipeline; 
     VkPipelineLayout pipelinelayout;
+
+    VkDescriptorPool      discpool;
+    VkDescriptorSet       discset;
+    VkDescriptorSetLayout disclayout;
+    
+    void *discdata;
 } DrawerDef;
 
 typedef struct DrawableDef {
@@ -382,6 +393,7 @@ static struct Graphics_instance{
     VkDeviceMemory depthstencilmemory;
 
     DrawerDef *drawers;
+    uint32_t drawersused;
     uint32_t drawercount;
     
     VkDescriptorSetLayout  uniformlayout, texturelayout;
@@ -423,7 +435,6 @@ Return_t CreateDevice();
 Return_t CreateSwapchain();
 Return_t CreateLayouts();
 Return_t CreateRenderPass();
-//Return_t CreatePipeline();
 Return_t CreateCommands();
 Return_t CreateSyncVars();
 Return_t CreateBuffers();
@@ -540,6 +551,18 @@ void DestroyBuffer( GraphicsBuffer *buffer ){
     vkFreeMemory( gfx.device, buffer->memory, 0 );
 }
 
+void UniformBufferCreate( Drawer dr, uint32_t resi ){
+    if (!dr) return;
+    printf("okay starting uniform creation");
+
+    if (dr)
+
+
+    
+
+    return; /* Successful */
+}
+
 Return_t InitGraphics( ){
     Return_t r;
     r = CreateInstance();
@@ -588,8 +611,9 @@ Return_t InitGraphics( ){
     // vkGetPhysicalDeviceProperties(gfx.physicaldevice, &props);
     // limits = props.limits;
     // printf("Max memory allocations %lu\n", limits.sparseAddressSpaceSize);
-    gfx.drawers = malloc(sizeof(DrawerDef));
-    gfx.drawercount = 1;
+    gfx.drawers = malloc(sizeof(DrawerDef) * 2);
+    gfx.drawersused = 0;
+    gfx.drawercount = 2; // TODO: fix this lol
 
     return 0;
 }
@@ -842,6 +866,7 @@ Return_t CreateLayouts( ){
         .bindingCount = 1,
         .pBindings = &dslbS
     };
+
     if (vkCreateDescriptorSetLayout(gfx.device, &ulciUB, nullptr, &gfx.uniformlayout) != VK_SUCCESS){
         return "Couldn't create descriptor set layout! (1)";
     }
@@ -863,7 +888,7 @@ Return_t CreateLayouts( ){
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .maxSets = 2,
+        .maxSets = 5,
         .poolSizeCount = 2,
         .pPoolSizes = poolsizes,
     };
@@ -1030,312 +1055,9 @@ Return_t CreateRenderPass( ){
 
     return 0;
 }
-/*
-Return_t CreatePipeline( ){
-    char *shadersources[2];
-    int   shadersourcesizes[2];
-    int   shadercount = 2;
-    {
-        const char *filenames[2] = {"world.vert.spirv", "world.frag.spirv"};
 
-        // TODO implement file safe guarding
-        for (int i = 0; i < shadercount; ++i){
-            FILE *fileread = fopen(filenames[i], "rb");
-            fseek(fileread, 0, SEEK_END);
-            shadersourcesizes[i] = ftell(fileread);
-            fseek(fileread, 0, SEEK_SET);
-
-            shadersources[i] = malloc(sizeof(char) * shadersourcesizes[i]);
-            fread(shadersources[i], 1, shadersourcesizes[i], fileread);
-            fclose(fileread);
-        }
-    }
-
-    VkShaderModule shadermodules[2];
-    {
-        VkShaderModuleCreateInfo smci[2] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .codeSize = shadersourcesizes[0],
-                .pCode = (const uint32_t*)shadersources[0]
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .codeSize = shadersourcesizes[1],
-                .pCode = (const uint32_t*)shadersources[1]
-            }
-        };
-
-        vkCreateShaderModule(gfx.device, smci + 0, nullptr, shadermodules + 0);
-        vkCreateShaderModule(gfx.device, smci + 1, nullptr, shadermodules + 1);
-    }
-
-    VkPipelineShaderStageCreateInfo sci[2] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = shadermodules[0],
-            .pName = "main",
-            .pSpecializationInfo = nullptr
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = shadermodules[1],
-            .pName = "main",
-            .pSpecializationInfo = nullptr
-        }
-    };
-
-    // Vector4 pos;
-    // Vector4 nrm;
-    // Vector4 col;
-    // Vector2 tex;
-    // ----------------
-    // uint16_t trsid;
-    // uint16_t  matid;
-
-    VkVertexInputBindingDescription bindingdesc[1] = {
-        {
-            .binding   = 0,
-            .stride    = sizeof(Vertex),
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-        }
-
-    };
-    VkVertexInputAttributeDescription attributedesc[6] = {
-        {
-            .location = 0,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = 0
-        },
-        {
-            .location = 1,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = offsetof(Vertex, nrm)
-        },
-        {
-            .location = 2,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32G32_SFLOAT,
-            .offset   = offsetof(Vertex, tex)
-        },
-        {
-            .location = 3,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32_UINT,
-            .offset   = offsetof(Vertex, trsid)
-        },
-        {
-            .location = 4,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32_UINT,
-            .offset   = offsetof(Vertex, matid)
-        }
-    };
-    VkPipelineVertexInputStateCreateInfo vici = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = bindingdesc, 
-        .vertexAttributeDescriptionCount = 5,
-        .pVertexAttributeDescriptions = attributedesc
-    };
-
-    VkPipelineInputAssemblyStateCreateInfo iaci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .primitiveRestartEnable = VK_FALSE
-    };
-    // VkPipelineInputAssemblyStateCreateInfo uiplInputAssemblyCI = {
-    //     .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-    //     .pNext = nullptr,
-    //     .flags = 0,
-    //     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-    //     .primitiveRestartEnable = VK_FALSE
-    // };
-
-    VkViewport viewport = {
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = (float)gfx.extent.width,
-        .height = (float)gfx.extent.height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f
-    };
-    VkRect2D scissor = {
-        .offset = {0, 0},
-        .extent = gfx.extent
-    };
-    VkPipelineViewportStateCreateInfo vpci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .viewportCount = 1,
-        .pViewports = &viewport,
-        .scissorCount = 1,
-        .pScissors = &scissor
-    };
-
-    VkPipelineRasterizationStateCreateInfo rsci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE,
-        .depthBiasConstantFactor = 0.0f,
-        .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f 
-    };
-
-    VkPipelineMultisampleStateCreateInfo msci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-        .sampleShadingEnable = VK_FALSE
-    };
-
-    VkPipelineDepthStencilStateCreateInfo dsci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
-        .depthCompareOp = VK_COMPARE_OP_LESS,
-        .depthBoundsTestEnable = VK_FALSE,
-        .stencilTestEnable = VK_TRUE,
-        .front = (VkStencilOpState){
-            .failOp = VK_STENCIL_OP_KEEP,
-            .passOp = VK_STENCIL_OP_REPLACE,
-            .depthFailOp = VK_STENCIL_OP_KEEP,
-            .compareOp = VK_COMPARE_OP_ALWAYS,
-            .compareMask = 0xff,
-            .writeMask = 0xff,
-            .reference = 1,
-        },
-        .back = {},
-        .minDepthBounds = 0.0f,
-        .maxDepthBounds = 1.0f
-    };
-
-    VkPipelineColorBlendAttachmentState cba[] = {
-        {
-            .blendEnable = VK_TRUE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
-            .colorWriteMask = (
-                VK_COLOR_COMPONENT_R_BIT |
-                VK_COLOR_COMPONENT_G_BIT |
-                VK_COLOR_COMPONENT_B_BIT |
-                VK_COLOR_COMPONENT_A_BIT
-            )
-        }
-    };
-    VkPipelineColorBlendStateCreateInfo cbci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .logicOpEnable = VK_FALSE,
-        .logicOp = VK_LOGIC_OP_NO_OP,
-        .attachmentCount = 1,
-        .pAttachments = cba,
-        .blendConstants = {}//{1.0f, 1.0f, 1.0f, 1.0f}
-    };
-    
-    VkDescriptorSetLayout dslayouts[] = {
-        gfx.uniformlayout, gfx.texturelayout
-    };
-    VkPushConstantRange pushconstants[] = {
-        (VkPushConstantRange){
-            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-            .offset = 0,
-            .size = 64 // sizeof matrix (16 * sizeof(float))
-        }
-    };
-    VkPipelineLayoutCreateInfo plci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .setLayoutCount = 2,
-        .pSetLayouts = dslayouts,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = pushconstants
-    };
-    vkCreatePipelineLayout( gfx.device, &plci, nullptr, &gfx.pipelinelayouts[0] );
-
-
-    VkGraphicsPipelineCreateInfo pci[2] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stageCount = 2, // Vertex & fragment shaders
-            .pStages = sci,
-            .pVertexInputState = &vici,
-            .pInputAssemblyState = &iaci,
-            .pTessellationState = nullptr, // OPTIONAL
-            .pViewportState = &vpci,
-            .pRasterizationState = &rsci,
-            .pMultisampleState = &msci,
-            .pDepthStencilState = &dsci,
-            .pColorBlendState = &cbci,
-            .layout = gfx.pipelinelayouts[0],
-            .renderPass = gfx.renderpass,
-            .subpass = 0
-        },
-    };
-    //     {
-    //         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-    //         .pNext = nullptr,
-    //         .flags = 0,
-    //         .stageCount = 2, // Vertex & fragment shaders
-    //         .pStages = shaderCreateInfos+2,
-    //         .pVertexInputState = &uiplVertexInputCI,
-    //         .pInputAssemblyState = &uiplInputAssemblyCI,
-    //         .pTessellationState = nullptr, // OPTIONAL
-    //         .pViewportState = &plViewportCI,
-    //         .pRasterizationState = &plRasterizationCI,
-    //         .pMultisampleState = &multisampleCI,
-    //         .pDepthStencilState = &depthstencilCI,
-    //         .pColorBlendState = &plColorBlendingCI,
-    //         .layout = pipelinelayouts[0],
-    //         .renderPass = rp,
-    //         .subpass = 0
-    //     }
-    // };
-
-    vkCreateGraphicsPipelines(
-        gfx.device, VK_NULL_HANDLE,
-        1, pci, nullptr, gfx.pipelines
-    );
-
-    return 0;
-}
-*/
 Return_t CreateCommands( ){
+
     VkCommandPoolCreateInfo cpci = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = 0,
@@ -1355,6 +1077,7 @@ Return_t CreateCommands( ){
 
     return 0;
 }
+
 Return_t CreateSyncVars( ){
     VkSemaphoreCreateInfo sci = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -1375,6 +1098,7 @@ Return_t CreateSyncVars( ){
     vkDeviceWaitIdle( gfx.device );
     return 0;
 }
+
 Return_t CreateBuffers( ){
     bufman.memupdated = true;
     ComponentDefine gfxdefs[] = {
@@ -1453,6 +1177,7 @@ Return_t CreateBuffers( ){
 
     return 0;
 }
+
 Return_t CreateImageSamplers( ){
     DirectImage readimage = directimage_create_bmp("texture_map.bmp");
     uint32_t
@@ -1526,15 +1251,6 @@ Return_t CreateImageSamplers( ){
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
     
-    // Colour da[width * height];
-    // for (uint32_t y = 0; y < height; ++y){
-    //     for (uint32_t x = 0; x < width; ++x){
-    //         da[(y * width) + x] = (Colour){100, 25, 80, 255};
-    //         if (x == y){
-    //             da[(y * width) + x] = Colours_white;
-    //         }
-    //     }
-    // }
     void *texdata;
     vkMapMemory( gfx.device, interbuffer.memory, 0, texsize, 0, &texdata );
         memcpy(texdata, readimage.data, texsize);
@@ -1694,10 +1410,19 @@ Return_t CreateImageSamplers( ){
 }
 
 Drawer DrawerCreate( DrawerCreateInfo dci ){
+    if(gfx.drawersused < gfx.drawercount){
+        gfx.drawersused++;
+    }
+    else {
+        return NULL;
+    }
+    Drawer currdraw = gfx.drawers + (gfx.drawersused-1);
+
+    /* SHADERS */
+
     char *shadersources[2];
     int   shadersourcesizes[2];
     int   shadercount = 2;
-    printf("okay...\n");
     {
         const char *filenames[2] = {dci.vshader, dci.fshader};
 
@@ -1713,7 +1438,6 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             fclose(fileread);
         }
     }
-    printf("hello???\n");
 
     VkShaderModule shadermodules[2];
     {
@@ -1758,63 +1482,65 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             .pSpecializationInfo = nullptr
         }
     };
+    
+    /* INPUT ASSEMBLY */
 
-    // Vector4 pos;
-    // Vector4 nrm;
-    // Vector4 col;
-    // Vector2 tex;
-    // ----------------
-    // uint16_t trsid;
-    // uint16_t  matid;
+    uint32_t bindingstrides[16]; // assuming noone is going to use more than 16 bindings
+    uint32_t bindingcount = dci.vertexinfos[0].binding;
+    for (uint32_t i = 0; i < dci.vertexinfocount; ++i){
+        if (dci.vertexinfos[i].binding > bindingcount)
+            bindingcount = dci.vertexinfos[i].binding;
+    }
+    // assuming attributes are provided with binding in ascending order.
 
-    VkVertexInputBindingDescription bindingdesc[1] = {
-        {
-            .binding   = 0,
-            .stride    = sizeof(Vertex),
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+    VkVertexInputBindingDescription bindingdescs[bindingcount + 1];
+    for (uint32_t b = 0; b < bindingcount + 1; ++b){
+        bindingdescs[b] = (VkVertexInputBindingDescription){
+            .binding = b,
+            .stride = 0, // changed shortly
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX // TODO: let it be sumn else.
+        };
+
+        for (uint32_t v = 0; v < dci.vertexinfocount; ++v){
+            if (dci.vertexinfos[v].binding == b){
+                bindingdescs[b].stride += DataTypeToSize(dci.vertexinfos[v].type);
+                //printf("yeah..%d\n",DataTypeToSize(dci.vertexinfos[v].type));
+            }
         }
+    }
 
-    };
-    VkVertexInputAttributeDescription attributedesc[6] = {
-        {
-            .location = 0,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = 0
-        },
-        {
-            .location = 1,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = offsetof(Vertex, nrm)
-        },
-        {
-            .location = 2,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32G32_SFLOAT,
-            .offset   = offsetof(Vertex, tex)
-        },
-        {
-            .location = 3,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32_UINT,
-            .offset   = offsetof(Vertex, trsid)
-        },
-        {
-            .location = 4,
-            .binding  = 0,
-            .format   = VK_FORMAT_R32_UINT,
-            .offset   = offsetof(Vertex, matid)
+    VkVertexInputAttributeDescription attributedescs[dci.vertexinfocount];
+    uint32_t lastbinding = 0; uint32_t attributeoffset = 0;
+    for (uint32_t a = 0; a < dci.vertexinfocount; ++a){
+        if (dci.vertexinfos[a].binding != lastbinding){
+            lastbinding = dci.vertexinfos[a].binding;
+            attributeoffset = 0;
         }
-    };
+        attributedescs[a] = (VkVertexInputAttributeDescription){
+            .location = dci.vertexinfos[a].location,
+            .binding = dci.vertexinfos[a].binding,
+            .format = 0, // Changed shortly
+            .offset = attributeoffset,
+        };
+        switch (dci.vertexinfos[a].type){
+        case DDE_float1: attributedescs[a].format = VK_FORMAT_R32_SFLOAT; break;
+        case DDE_float2: attributedescs[a].format = VK_FORMAT_R32G32_SFLOAT; break;
+        case DDE_float3: attributedescs[a].format = VK_FORMAT_R32G32B32_SFLOAT; break;
+        case DDE_float4: attributedescs[a].format = VK_FORMAT_R32G32B32A32_SFLOAT; break;
+        case DDE_uint1: attributedescs[a].format = VK_FORMAT_R32_UINT; break;
+        };
+        attributeoffset += DataTypeToSize(dci.vertexinfos[a].type);
+    }
+
     VkPipelineVertexInputStateCreateInfo vici = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = bindingdesc, 
-        .vertexAttributeDescriptionCount = 5,
-        .pVertexAttributeDescriptions = attributedesc
+        .vertexBindingDescriptionCount = bindingcount + 1,
+        .pVertexBindingDescriptions = bindingdescs, 
+
+        .vertexAttributeDescriptionCount = dci.vertexinfocount,
+        .pVertexAttributeDescriptions = attributedescs
     };
 
     VkPipelineInputAssemblyStateCreateInfo iaci = {
@@ -1823,16 +1549,10 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .flags = 0,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE
-    };
-    // VkPipelineInputAssemblyStateCreateInfo uiplInputAssemblyCI = {
-    //     .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-    //     .pNext = nullptr,
-    //     .flags = 0,
-    //     .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-    //     .primitiveRestartEnable = VK_FALSE
-    // };
+    }; 
 
-    printf("hahahahah\n");;
+    /* VIEW AND SCISSOR */
+
     VkViewport viewport = {
         .x = 0.0f,
         .y = 0.0f,
@@ -1854,6 +1574,8 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .scissorCount = 1,
         .pScissors = &scissor
     };
+
+    /* RENDERING */
 
     VkPipelineRasterizationStateCreateInfo rsci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -1902,23 +1624,24 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .maxDepthBounds = 1.0f
     };
 
-    VkPipelineColorBlendAttachmentState cba[] = {
-        {
-            .blendEnable = VK_TRUE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
-            .colorWriteMask = (
-                VK_COLOR_COMPONENT_R_BIT |
-                VK_COLOR_COMPONENT_G_BIT |
-                VK_COLOR_COMPONENT_B_BIT |
-                VK_COLOR_COMPONENT_A_BIT
-            )
-        }
+    VkPipelineColorBlendAttachmentState cba = {
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = (
+            VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT
+        )
     };
+    if (!dci.transparency){
+        cba.blendEnable = VK_FALSE;
+    }
     VkPipelineColorBlendStateCreateInfo cbci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .pNext = nullptr,
@@ -1926,13 +1649,333 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .logicOpEnable = VK_FALSE,
         .logicOp = VK_LOGIC_OP_NO_OP,
         .attachmentCount = 1,
-        .pAttachments = cba,
+        .pAttachments = &cba,
         .blendConstants = {}//{1.0f, 1.0f, 1.0f, 1.0f}
     };
 
-    printf("FUFUFUFU\n");
+
+    /* RESOURCES */
+
+
+    VkDescriptorSetLayoutBinding dslayoutbinding[dci.resourceinfocount];
+    uint32_t uniformc = 0, imagec = 0, samplerc = 0;
+    /* TODO: dont assume all resources are set 0 */
+    for (uint32_t r = 0; r < dci.resourceinfocount; ++r){
+        dslayoutbinding[r] = (VkDescriptorSetLayoutBinding){
+            .binding = dci.resourceinfos[r].binding,
+            .descriptorCount = 1,
+            .pImmutableSamplers = 0 /* TODO: dont assume this */
+        };
+        switch (dci.resourceinfos[r].type){
+        case DRTE_uniform:
+            dslayoutbinding[r].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            ++uniformc;
+            break;
+        case DRTE_image:
+            dslayoutbinding[r].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            ++imagec;
+            break;
+        case DRTE_sampler:
+            dslayoutbinding[r].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            ++samplerc;
+            break;
+        }
+        switch (dci.resourceinfos[r].stage){
+        case DRSE_vertex: dslayoutbinding[r].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; break;
+        case DRSE_fragment: dslayoutbinding[r].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; break;
+        }
+    }
+
+    VkDescriptorSetLayoutCreateInfo dslayoutcreateinfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .bindingCount = dci.resourceinfocount,
+        .pBindings = dslayoutbinding
+    };
+
+    if (vkCreateDescriptorSetLayout(gfx.device, &dslayoutcreateinfo, nullptr, &gfx.drawers[gfx.drawersused-1].disclayout) != VK_SUCCESS){
+        ExitOnError("Couldn't create descriptor set layout! (geeb)");
+    }
+
+    VkDescriptorPoolSize poolsizes[] = {
+        {
+            .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = uniformc
+        },
+        {
+            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = samplerc
+        }
+    };
+    VkDescriptorPoolCreateInfo dpci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .maxSets = 1,
+        .poolSizeCount = 2,
+        .pPoolSizes = poolsizes,
+    };
+    if (vkCreateDescriptorPool(gfx.device, &dpci, 0, &gfx.drawers[gfx.drawersused-1].discpool) != VK_SUCCESS){
+        ExitOnError("Couldn't create descriptor pool!");
+    }
+    VkDescriptorSetAllocateInfo sdai = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = 0,
+        .descriptorPool = currdraw->discpool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &currdraw->disclayout
+    };
+    if (vkAllocateDescriptorSets( gfx.device, &sdai, &currdraw->discset ) != VK_SUCCESS) {
+        ExitOnError("Couldn't allocate descriptor set!\n");
+    }
+
+    /* Uniform Buffers */
+    CreateBuffer(
+        &bufman.trs,
+        1024 * sizeof(Matrix),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+    );
+    VkDescriptorBufferInfo bufferInfo = {
+        .buffer = bufman.trs.buffer,
+        .offset = 0,
+        .range = sizeof(Matrix) * 1024
+    };
+    VkWriteDescriptorSet descriptorWrite = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = 0,
+        .dstSet = currdraw->discset,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .pImageInfo = 0,
+        .pBufferInfo = &bufferInfo,
+        .pTexelBufferView = 0
+    };
+    vkUpdateDescriptorSets( gfx.device, 1, &descriptorWrite, 0, 0 );
+
+    /* Images */
+    DirectImage readimage = directimage_create_bmp("texture_map.bmp");
+    uint32_t
+        width = readimage.width,
+        height = readimage.height;
+        
+    uint32_t texsize = width * height * 4;
+
+    VkExtent3D sampleriamgeextent = {
+        width, height, 1
+    };
+    VkImageCreateInfo ici = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = 0,
+        .flags = 0,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .extent = sampleriamgeextent,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE, // TODO: not assume
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = &gfx.graphics_i,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    vkCreateImage( gfx.device, &ici, 0, &samplers.image);
+    VkMemoryRequirements memreq;
+    vkGetImageMemoryRequirements( gfx.device, samplers.image, &memreq);
+
+    VkMemoryAllocateInfo mai = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = 0,
+        .allocationSize = memreq.size,
+        .memoryTypeIndex = FindMemoryType(
+            memreq.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+        )
+    };
+    vkAllocateMemory( gfx.device, &mai, 0, &samplers.memory );
+    vkBindImageMemory( gfx.device, samplers.image, samplers.memory, 0 );
+
+    VkImageViewCreateInfo ivci = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = samplers.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .components = {
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY
+        },
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+    vkCreateImageView( gfx.device, &ivci, 0, &samplers.imageview );
+
+    GraphicsBuffer interbuffer;
+    CreateBuffer(
+        &interbuffer,
+        texsize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+    
+    void *texdata;
+    vkMapMemory( gfx.device, interbuffer.memory, 0, texsize, 0, &texdata );
+        memcpy(texdata, readimage.data, texsize);
+    printf("got here, memory set!\n");
+    vkUnmapMemory(gfx.device, interbuffer.memory);
+
+    VkCommandBuffer intercommand;
+    VkCommandBufferAllocateInfo cbai = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = 0,
+        .commandPool = gfx.commandpool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+    vkAllocateCommandBuffers( gfx.device, &cbai, &intercommand );
+    VkCommandBufferBeginInfo cbbi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = 0,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = 0
+    };
+    vkBeginCommandBuffer(intercommand, &cbbi);
+
+    VkImageMemoryBarrier imbb = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = 0,
+        .srcAccessMask = 0,
+        .dstAccessMask = 0,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, // Ignoring anything on image
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // Not swapping queue
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // ownership of img
+        .image = samplers.image,
+        .subresourceRange = (VkImageSubresourceRange){
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+    VkImageMemoryBarrier imba = imbb;
+    imba.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imba.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    vkCmdPipelineBarrier(
+        intercommand,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, 0,
+        0, 0,
+        1, &imbb
+    );
+    VkBufferImageCopy bic = {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,   // ASSUME THE EXTENT
+        .bufferImageHeight = 0, // IS THE TEXTURE SIZE
+        .imageSubresource = (VkImageSubresourceLayers){
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .imageOffset = 0,
+        .imageExtent = (VkExtent3D){
+            .width = width,
+            .height = height,
+            .depth = 1
+        }
+    };
+    vkCmdCopyBufferToImage(
+        intercommand,
+        interbuffer.buffer,
+        samplers.image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &bic
+    );
+
+    vkCmdPipelineBarrier(
+        intercommand,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, 0,
+        0, 0,
+        1, &imba
+    );
+
+    vkEndCommandBuffer(intercommand);
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = 0,
+        .pWaitDstStageMask = 0,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &intercommand,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = 0
+    };
+    vkQueueSubmit(gfx.graphics, 1, &submitInfo, VK_NULL_HANDLE);
+
+    struct VkSamplerCreateInfo sci2 = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = 0,
+        .flags = 0,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 0.0f,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE
+    };
+    vkCreateSampler( gfx.device, &sci2, nullptr, &samplers.sampler );
+    
+    VkDescriptorImageInfo samplerinfo = {
+        .sampler = samplers.sampler,
+        .imageView = samplers.imageview,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+    VkWriteDescriptorSet descriptorwrite = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = 0,
+        .dstSet = currdraw->discset,
+        .dstBinding = 1, // CHANGEDDD
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &samplerinfo,
+        .pBufferInfo = 0,
+        .pTexelBufferView = 0
+    };
+    // Update the descriptor set to bind the uniform buffer
+    vkUpdateDescriptorSets(gfx.device, 1, &descriptorwrite, 0, 0);
+
+    /* Image Samplers */
+
     VkDescriptorSetLayout dslayouts[] = {
-        gfx.uniformlayout, gfx.texturelayout
+        gfx.drawers[gfx.drawersused-1].disclayout
     };
     VkPushConstantRange pushconstants[] = {
         (VkPushConstantRange){
@@ -1945,13 +1988,18 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .setLayoutCount = 2,
+        .setLayoutCount = 1,
         .pSetLayouts = dslayouts,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = pushconstants
     };
-    vkCreatePipelineLayout( gfx.device, &plci, nullptr, &gfx.drawers[0].pipelinelayout );
+    vkCreatePipelineLayout( 
+        gfx.device, 
+        &plci, nullptr, 
+        &gfx.drawers[gfx.drawersused-1].pipelinelayout
+    );
 
+    /* WRAPPING UP */
 
     VkGraphicsPipelineCreateInfo pci[1] = {
         {
@@ -1968,7 +2016,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             .pMultisampleState = &msci,
             .pDepthStencilState = &dsci,
             .pColorBlendState = &cbci,
-            .layout = gfx.drawers[0].pipelinelayout,
+            .layout = gfx.drawers[gfx.drawersused-1].pipelinelayout,
             .renderPass = gfx.renderpass,
             .subpass = 0
         },
@@ -1976,9 +2024,21 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
 
     vkCreateGraphicsPipelines(
         gfx.device, VK_NULL_HANDLE,
-        1, pci, nullptr, &gfx.drawers[0].pipeline
+        1, pci, nullptr,
+        &gfx.drawers[gfx.drawersused-1].pipeline
     );
 
+    return &gfx.drawers[gfx.drawersused-1];
+}
+
+uint32_t DataTypeToSize( DrawerDataEnum dde ){
+    switch (dde){
+        case DDE_float1: return 1 * sizeof(float);
+        case DDE_float2: return 2 * sizeof(float);
+        case DDE_float3: return 3 * sizeof(float);
+        case DDE_float4: return 4 * sizeof(float);
+        case DDE_uint1: return 1 * sizeof(uint32_t);
+    }
     return 0;
 }
 
@@ -2286,9 +2346,7 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
     }
 
     StartRenderPass( imageindex );
-    printf("fuck fuck \n");
-    vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, gfx.drawers[0].pipeline );
-    printf("fuck frrruck \n");
+    vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, drawer->pipeline );
 
     VkBuffer buffers[] = {bufman.vtx.buffer};
     VkDeviceSize offsets[] = {0};
@@ -2297,14 +2355,14 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
     vkCmdBindIndexBuffer( gfx.drawcommand, bufman.ind.buffer, 0, VK_INDEX_TYPE_UINT32 );
 
     VkDescriptorSet sets[] = {
-        gfx.uniform, gfx.texture
+        drawer->discset
     };
     vkCmdBindDescriptorSets(
         gfx.drawcommand,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
-        gfx.drawers[0].pipelinelayout,
+        drawer->pipelinelayout,
         0,
-        2, sets,
+        1, sets,
         0, 0
     );
 
@@ -2323,7 +2381,7 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
         ),
         MatrixPerspective(gfx.cam.fov, gfx.cam.aspect, near, far)
     );
-    vkCmdPushConstants( gfx.drawcommand, gfx.drawers[0].pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &m);
+    vkCmdPushConstants( gfx.drawcommand, drawer->pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &m);
     vkCmdDrawIndexed( gfx.drawcommand, bufman.ind.sizeofdata / sizeof(uint32_t), 1, 0, 0, 0 );
 
     "eva is so beautiful <3";
@@ -2386,6 +2444,8 @@ Vector3 camera_get_forward_XYZ( CameraInfo cam ){
 
     return (Vector3){xaxis, yaxis, zaxis};
 }
+
+/* UI & MISC */
 
 typedef struct UiComponent_def {
     const char *name;

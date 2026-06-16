@@ -209,6 +209,10 @@ vertshader = CreateProject( "vert", "out", "shader" )
 vertshader.files = {"world.vert"}
 fragshader = CreateProject( "frag", "out", "shader" )
 fragshader.files = {"world.frag"}
+uivertshader = CreateProject( "vert", "out", "shader" )
+uivertshader.files = {"ui.vert"}
+uifragshader = CreateProject( "frag", "out", "shader" )
+uifragshader.files = {"ui.frag"}
 
 rungame = CreateProject( "Run Game", "cd "..game.outdir.."/ ; ./"..game.name..".out", "command" )
 -- vertshaderui = CreateProject( "vertui", "out", "shader" )
@@ -225,7 +229,7 @@ buildargs = {
 	{"wg", {wingfx}},
 	{"l",  {logic}},
 	{"a",  {app}},
-	{"s",  { vertshader, fragshader }},
+	{"s",  { vertshader, fragshader, uivertshader, uifragshader }},
 	{"all", {wingfx, logic, app, vertshader, fragshader, game}},
 
 	{"run", {rungame}}

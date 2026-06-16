@@ -14,26 +14,63 @@ int main(){
     InitWindow( 1280, 720, "HIYA", 0 );
 
     DrawerVertexInfo dvi[] = {
-        {0, 0, },
+        // binding, location, data type
+        {0, 0, DDE_float3},
+        {0, 1, DDE_float3},
+        {0, 2, DDE_float2},
+        {0, 3, DDE_uint1},
+        {0, 4, DDE_uint1},
     };
     DrawerResourceInfo dri[] = {
-        
+        {
+            0, 0, 
+            DRTE_uniform, DRSE_vertex,
+            .uniform = {
+                true, 1024
+            }
+        },
+        {
+            0, 1,
+            DRTE_sampler, DRSE_fragment,
+            .sampler = {
+                "texture_map.bmp"
+            }
+        },
     };
     DrawerCreateInfo dci = {
         .vertexinfos = dvi,
-        .vertexinfocount = 4,
+        .vertexinfocount = 5,
         .resourceinfos = dri,
         .resourceinfocount = 2,
 
         .vshader = "world.vert.spirv",
         .fshader = "world.frag.spirv",
+        .drawmethod = DDME_triangle,
+        .transparency = true
+    };
+    Drawer worlddrawer = DrawerCreate( dci );
+   
+    /*
+    DrawerVertexInfo dvi2[] = {
+        {0, 0, DDE_float2},
+        {0, 1, DDE_float2},
+        {0, 2, DDE_float4}
+    };
+    DrawerResourceInfo dri2[] = { 
+        {0, 0, DRTE_sampler, DRSE_fragment},
+    };
+    DrawerCreateInfo dci2 = {
+        .vertexinfos = dvi2,
+        .vertexinfocount = 3,
+        .resourceinfos = dri,
+        .resourceinfocount = 2,
+
+        .vshader = "ui.vert.spirv",
+        .fshader = "ui.frag.spirv",
         .drawmethod = DDME_triangle
     };
-    printf("balls\n");
-    Drawer dr = DrawerCreate( dci );
-    printf("cum\n");
-
-    
+    Drawer uidrawer = DrawerCreate( dci2 );
+    */
 
     ComponentDefine comps[] = {
         {"pos", sizeof(Position), 0},
@@ -54,8 +91,14 @@ int main(){
         Mesh_CreateQuad( MatrixIdentity(), 0, 0 ), true,
         MatrixRotateX(3.14159 / 2.0)
     };
+    RegisterDrawableInfo testerreg = {
+        Mesh_CreateQuad( MatrixIdentity(), 0, 0 ), true,
+        MatrixIdentity()
+    };
     Drawable mapdrawable = CreateDrawable( mapregister );
+    Drawable testdrawable = CreateDrawable( testerreg );
     ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() ));
+    ExitOnError(DrawableSetTransform( testdrawable, MatrixIdentity() ));
 
     CameraInfo ci = {
         (Vector3){0, -1, 1},
@@ -144,9 +187,7 @@ int main(){
 
         ClearWindowEvents(events);
 
-        printf("yeah okayyyyyyy\n");
-        WindowDraw( dr, mapdrawable );
-        printf("never no more :(\n");
+        WindowDraw( worlddrawer, mapdrawable );
         ui_draw( root );
     }
 

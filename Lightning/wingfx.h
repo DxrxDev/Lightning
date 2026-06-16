@@ -123,18 +123,42 @@ These are responsible for defining how data is passed to, and processed on the G
 Essentially, abstractions for Vulkan's Pipelines.
 */
 typedef enum DrawerDataEnum {
-    DDE_float,
-    DDE_uint32
+    DDE_float1,
+    DDE_float2,
+    DDE_float3,
+    DDE_float4,
+    DDE_uint1
 } DrawerDataEnum;
 typedef enum DrawerDrawMethodEnum {
     DDME_triangle
 } DrawerDrawMethodEnum;
+typedef enum DrawerResourceTypeEnum {
+    DRTE_uniform,
+    DRTE_image,
+    DRTE_sampler
+}DrawerResourceTypeEnum;
+typedef enum DrawerResourceStageEnum {
+    DRSE_vertex,
+    DRSE_fragment,
+    DRSE_
+}DrawerResourceStageEnum;
 typedef struct DrawerVertexInfo {
-    uint32_t location, binding;
+    uint32_t binding, location;
     DrawerDataEnum type;
 } DrawerVertexInfo;
 typedef struct DrawerResourceInfo {
-
+    uint32_t set, binding;
+    DrawerResourceTypeEnum type;
+    DrawerResourceStageEnum stage;
+    union {
+        struct {
+            bool hostvisable;
+            uint32_t size;
+        } uniform;
+        struct {
+            const char *file;
+        } sampler;
+    };
 } DrawerResourceInfo;
 typedef struct DrawerCreateInfo {
     DrawerVertexInfo *vertexinfos;
@@ -145,10 +169,12 @@ typedef struct DrawerCreateInfo {
     const char *vshader;
     const char *fshader;
     DrawerDrawMethodEnum drawmethod;
+    bool transparency;
 } DrawerCreateInfo;
 typedef struct DrawerDef *Drawer;
 Drawer DrawerCreate( DrawerCreateInfo dci );
 
+uint32_t DataTypeToSize( DrawerDataEnum dde );
 
 void WindowClearScreen( );
 void WindowDraw( Drawer drawer, Drawable drawable );

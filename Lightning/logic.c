@@ -16,6 +16,12 @@ typedef struct ECS_def {
     bool *dictionary; // list of active components per entity
 } ECS_def;
 
+typedef struct BADef {
+    Data_t data;
+    uint32_t stride;
+    uint32_t count;
+} BADef;
+
 nodisc ECS_t ECS_Create( size_t entitycount, ComponentDefine *components ){
     size_t numofcomp = 0;
     if (components){
@@ -105,4 +111,34 @@ nodisc Data_t ECS_Get( ECS_t ecs, Entity_t entity, Comp_t comp ){
 nodisc Data_t ECS_Get0( ECS_t ecs, Comp_t comp ){
     if (comp == UINT32_MAX) ExitOnError("Trying to get unavailable component (2)");
     return ecs->components[comp];
+}
+
+
+nodisc BA BACreate( BADefine def ){
+    BA ret = malloc( sizeof (BADef) );
+
+    ret->stride = def.datasize;
+    ret->count = def.datacount;
+
+    ret->data = malloc( ret->stride * ret->count );
+
+    return ret;
+}
+void BADestroy( BA comarr ){
+    free( comarr->data );
+    comarr->stride = 0;
+    comarr->count = 0;
+
+    free( comarr );
+}
+
+nodisc uint32_t BAGetStride( BA comarr ){
+    return comarr->stride;
+}
+void BASet( BA comarr, Data_t data, uint32_t count, uint32_t at ){
+    if ((at + count) >= comarr->count) return;
+    memcpy( comarr->data + at, data, count * comarr->stride );
+}
+nodisc Data_t BaGetPointer( BA comarr, uint32_t at ){
+    return comarr->data + (at * comarr->stride);
 }
