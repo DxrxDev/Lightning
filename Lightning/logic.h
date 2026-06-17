@@ -5,9 +5,10 @@
 #include "maths.h"
 
 typedef void *Data_t;
+typedef struct ECS_def *ECS_t;
+typedef struct BADef *BA;
 
 /* ECS */
-typedef struct ECS_def *ECS_t;
 typedef uint32_t        Comp_t;
 typedef uint32_t        Entity_t;
 typedef void (* ComponentCleanup)( Data_t );
@@ -18,8 +19,6 @@ typedef struct ComponentDefine {
 // End Array with {0, 0} to signify end of component definitions
 
 /* Complex Arrays */
-typedef struct BADef *BA;
-
 typedef struct BADefine {
     uint32_t datasize;
     uint32_t datacount;
@@ -46,6 +45,5 @@ void   BADestroy( BA comarr );
 nodisc uint32_t BAGetStride( BA comarr );
 void            BASet( BA comarr, Data_t data, uint32_t count, uint32_t at );
 nodisc Data_t   BaGetPointer( BA comarr, uint32_t at );
-             
 
 #endif

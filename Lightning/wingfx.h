@@ -6,6 +6,8 @@
 #include "base.h"
 #include "mmm.h"
 #include "maths.h"
+#include "logic.h"
+#include "geometry.h"
 
 // typedef struct VkSurfaceKHR_T *VkSurfaceKHR;
 
@@ -99,7 +101,7 @@ typedef struct Vertex{
     uint32_t trsid;
     uint32_t  matid;
 } Vertex;
-typedef struct {
+typedef struct MeshResource_t {
     Vertex   *vertdata; uint32_t vertcount;
     uint32_t *inddata;  uint32_t indcount;
 } MeshResource_t;
@@ -238,6 +240,6 @@ UiConfigs ui_get_configs( UiComponent comp );
 void ui_generate( UiComponent comp );
 void ui_draw( UiComponent comp );
 
-MeshResource_t Mesh_CreateQuad( Matrix m, uint32_t trsid, uint32_t matid );
+MeshResource_t Mesh_CreateQuad( Matrix m, Box2D tex, uint32_t trsid, uint32_t matid );
 
 #endif

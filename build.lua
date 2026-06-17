@@ -184,6 +184,12 @@ logic.files = {
 }
 logic.warnings = warnings.all
 
+geom = CreateProject( "geom", "out/int", "inter" )
+geom.files = {
+	"Lightning/geometry.c"
+}
+geom.warnings = warnings.all
+
 app = CreateProject( "app", "out/int", "inter" )
 app.files = {
 	"Project/main.c",
@@ -199,6 +205,7 @@ game.files = {
 }
 addobjs( wingfx, game )
 addobjs( logic, game )
+addobjs( geom, game )
 
 game.libraries = {
 	"dl", "m", "xcb", "xcb-icccm", "xcb-keysyms", "vulkan"
@@ -228,9 +235,10 @@ buildargs = {
 	{"g",  {game}},
 	{"wg", {wingfx}},
 	{"l",  {logic}},
+    {"gm", {geom}},
 	{"a",  {app}},
 	{"s",  { vertshader, fragshader, uivertshader, uifragshader }},
-	{"all", {wingfx, logic, app, vertshader, fragshader, game}},
+	{"all", {wingfx, logic, geom, app, vertshader, fragshader, game}},
 
 	{"run", {rungame}}
 }

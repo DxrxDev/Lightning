@@ -2,6 +2,7 @@
 #define MMM_IMPLEMENTATION
 #include "wingfx.h"
 #include "logic.h"
+#include "geometry.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -2239,7 +2240,6 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
 
     uint32_t trsid = *(uint32_t *)ECS_Get( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "t" ) );
 
-    printf("got here, memory set! %d wajefs %d\n", __LINE__, trsid);
     return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), trsid * sizeof(Matrix) );
 }
 
@@ -2502,14 +2502,14 @@ void ui_draw( UiComponent comp ){
 
 }
 
-MeshResource_t Mesh_CreateQuad( Matrix m, uint32_t trsid, uint32_t matid ){
+MeshResource_t Mesh_CreateQuad( Matrix m, Box2D tex, uint32_t trsid, uint32_t matid ){
     MeshResource_t ret;
 
     ret.vertdata = malloc(sizeof(Vertex) * 4);
-    ret.vertdata[0] = (Vertex){{-0.5, -0.5, 0.}, {0., 0., 0.}, {0., 0.}, trsid, matid}; // TL
-    ret.vertdata[1] = (Vertex){{ 0.5, -0.5, 0.}, {0., 0., 0.}, {1., 0.}, trsid, matid}; // TR
-    ret.vertdata[2] = (Vertex){{-0.5,  0.5, 0.}, {0., 0., 0.}, {0., 1.}, trsid, matid}; // BL
-    ret.vertdata[3] = (Vertex){{ 0.5,  0.5, 0.}, {0., 0., 0.}, {1., 1.}, trsid, matid}; // BR
+    ret.vertdata[0] = (Vertex){{-0.5, -0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 0), trsid, matid}; // TL
+    ret.vertdata[1] = (Vertex){{ 0.5, -0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 1), trsid, matid}; // TR
+    ret.vertdata[2] = (Vertex){{-0.5,  0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 2), trsid, matid}; // BL
+    ret.vertdata[3] = (Vertex){{ 0.5,  0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 3), trsid, matid}; // BR
     ret.vertcount = 4;
 
     ret.inddata = malloc(sizeof(uint32_t) * 6);

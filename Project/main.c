@@ -1,5 +1,6 @@
 #include "zubwayengine.h"
 #include "ui.h"
+#include "geometry.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,12 +88,19 @@ int main(){
     ECS_AddComp(ecs, mapent, poscomp, &mappos);
     ECS_AddComp(ecs, mapent, ECS_GetComp(ecs, "gfx"), 0);
 
+    Grid2D g = {
+        1, 1,
+        8, 8,
+        0, 0
+    };
+    Box2D b = Grid2DGetBox2D(g, 7, 0);
+
     RegisterDrawableInfo mapregister = {
-        Mesh_CreateQuad( MatrixIdentity(), 0, 0 ), true,
+        Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
         MatrixRotateX(3.14159 / 2.0), 0, worlddrawer
     };
     RegisterDrawableInfo testerreg = {
-        Mesh_CreateQuad( MatrixIdentity(), 0, 0 ), true,
+        Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
         MatrixIdentity(), 0, worlddrawer
     };
     Drawable mapdrawable = CreateDrawable( mapregister );
@@ -112,6 +120,7 @@ int main(){
 
     ui_generate( root );
 
+    float balls = 0;
     while (AppRunning()){
         WindowClearScreen( );
         WindowEvent *events = GetWindowEvents(), *e = events;
@@ -183,9 +192,17 @@ int main(){
         if(window_key_down('k'))
             ci.pitch -= 1.0 / 60.0;
 
+        if (window_key_down('t'))
+            balls += 0.016;
+        if (window_key_down('g'))
+            balls -= 0.016;
+
         camera_set_main_camera( ci );
 
         ClearWindowEvents(events);
+    
+        
+        ExitOnError(DrawableSetTransform( testdrawable, MatrixTranslate(0, balls, 0) ));
 
         WindowDraw( worlddrawer, mapdrawable );
         ui_draw( root );
