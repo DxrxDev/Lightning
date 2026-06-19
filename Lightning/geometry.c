@@ -9,6 +9,7 @@ Vector2 Box2DGetCentre( Box2D box ){
 
 Vector2 Box2DGetCorner( Box2D box, uint32_t corner ){
     switch (corner){
+    default:
     case 0:
         return (Vector2){box.x, box.y};
     case 1:

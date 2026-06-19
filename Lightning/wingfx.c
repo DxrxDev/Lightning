@@ -376,10 +376,11 @@ typedef struct DrawerDef {
     VkDescriptorPool      discpool;
     VkDescriptorSet       discset;
     VkDescriptorSetLayout disclayout;
-    
-    void *discdata;
-
-    GraphicsBuffer discs;
+  
+    ECS_t bufferdict;
+    GraphicsBuffer buffers, hcbuffers;
+    size_t vsize, voffset, isize, ioffset;
+    BA discoffsets;
 } DrawerDef;
 
 typedef struct DrawableDef {
@@ -459,11 +460,9 @@ Return_t CreateImageSamplers();
 Return_t CreateUiLayouts();
 Return_t CreateUiPipeline();
 Return_t CreateUiBuffers();
-// Return_t CreateUiLayouts();
 
 void UpdateVertexBuffer( MeshResource_t t, uint32_t offset );
 void UpdateIndexBuffer( MeshResource_t t, uint32_t offset );
-// Return_t UpdateTransformBuffer( Matrix *ms, uint32_t trscount, uint32_t offset );
 
 bool CheckSuitabilityOfDevice( VkPhysicalDevice dev, VkSurfaceKHR sur, uint32_t *graphics, uint32_t *present ){
     uint32_t g, p;
@@ -1404,6 +1403,16 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         return NULL;
     }
     Drawer currdraw = gfx.drawers + (gfx.drawersused-1);
+    uint32_t totalbuffersize = 0;
+    uint32_t totalhcbuffersize = 0;
+
+    ComponentDefine ecscompdefs[] = {
+        {"hc", sizeof(bool), NULL },
+        {"s", sizeof(uint32_t), NULL },
+        {"b", sizeof(uint32_t), NULL },
+        { 0, 0, 0 },
+    };
+    currdraw->bufferdict = ECS_Create( dci.resourceinfocount, ecscompdefs );
 
     /* SHADERS */
 
@@ -1491,7 +1500,6 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         for (uint32_t v = 0; v < dci.vertexinfocount; ++v){
             if (dci.vertexinfos[v].binding == b){
                 bindingdescs[b].stride += DataTypeToSize(dci.vertexinfos[v].type);
-                //printf("yeah..%d\n",DataTypeToSize(dci.vertexinfos[v].type));
             }
         }
     }
@@ -1537,6 +1545,14 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE
     }; 
+
+    currdraw->vsize = attributeoffset;
+    currdraw->voffset = 0;
+    totalbuffersize += (dci.vertexcount * currdraw->vsize);
+
+    currdraw->isize = sizeof(uint32_t);
+    currdraw->ioffset = currdraw->voffset + totalbuffersize;
+    totalbuffersize += (dci.indexcount * currdraw->isize);
 
     /* VIEW AND SCISSOR */
 
@@ -1643,7 +1659,6 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
 
     /* RESOURCES */
 
-
     VkDescriptorSetLayoutBinding dslayoutbinding[dci.resourceinfocount];
     uint32_t uniformc = 0, imagec = 0, samplerc = 0;
     /* TODO: dont assume all resources are set 0 */
@@ -1657,6 +1672,12 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         case DRTE_uniform:
             dslayoutbinding[r].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             ++uniformc;
+            if (dci.resourceinfos[r].uniform.hostvisable){
+                totalhcbuffersize += dci.resourceinfos[r].uniform.size;
+            }
+            else {
+                totalbuffersize += dci.resourceinfos[r].uniform.size;
+            }
             break;
         case DRTE_image:
             dslayoutbinding[r].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1718,15 +1739,23 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     }
 
     /* Uniform Buffers */
-    
+
+
     CreateBuffer(
-        &currdraw->discs,
-        1024 * sizeof(Matrix),
+        &currdraw->buffers,
+        totalbuffersize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );   
+    CreateBuffer(
+        &currdraw->hcbuffers,
+        totalhcbuffersize,
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     );
+
     VkDescriptorBufferInfo bufferInfo = {
-        .buffer = currdraw->discs.buffer,
+        .buffer = currdraw->hcbuffers.buffer,
         .offset = 0,
         .range = sizeof(Matrix) * 1024
     };
@@ -2153,15 +2182,15 @@ void UpdateIndexBuffer( MeshResource_t t, uint32_t offset ){
 }
 Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t size, uint32_t offset ){
     void* mappeddata;
-    vkMapMemory( gfx.device, dr->discs.memory, 0, dr->discs.sizeondevice, 0, &mappeddata);
+    vkMapMemory( gfx.device, dr->hcbuffers.memory, 0, dr->hcbuffers.sizeondevice, 0, &mappeddata);
     void *mapto = mappeddata + offset;
     memcpy(mapto, data, size);
-    vkUnmapMemory(gfx.device, dr->discs.memory);
+    vkUnmapMemory(gfx.device, dr->hcbuffers.memory);
     
     return 0;
 }
 
-Drawable CreateDrawable( RegisterDrawableInfo rdi ){
+Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     bufman.memupdated = true;
     MeshMemory *vmem = &bufman.vtxmem;
     bool foundslot = false;
@@ -2213,7 +2242,7 @@ Drawable CreateDrawable( RegisterDrawableInfo rdi ){
     free( rdi.mesh.vertdata );
     free( rdi.mesh.inddata );
 
-    dr->drawer = rdi.drawer;
+    dr->drawer = drawer;
     return dr;
 }
 Return_t DrawableSetVisability( Drawable dr, bool vis ){

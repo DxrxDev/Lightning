@@ -27,7 +27,7 @@ int main(){
             0, 0, 
             DRTE_uniform, DRSE_vertex,
             .uniform = {
-                true, 1024
+                true, 1024 * sizeof( Matrix )
             }
         },
         {
@@ -47,7 +47,10 @@ int main(){
         .vshader = "world.vert.spirv",
         .fshader = "world.frag.spirv",
         .drawmethod = DDME_triangle,
-        .transparency = true
+        .transparency = true,
+
+        .vertexcount = 1000,
+        .indexcount = 1000
     };
     Drawer worlddrawer = DrawerCreate( dci );
 
@@ -93,18 +96,20 @@ int main(){
         8, 8,
         0, 0
     };
-    Box2D b = Grid2DGetBox2D(g, 7, 0);
+    Box2D b = Grid2DGetBox2D(g, 7, 1);
 
-    RegisterDrawableInfo mapregister = {
+    DrawableCreateInfo mapregister = {
         Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
-        MatrixRotateX(3.14159 / 2.0), 0, worlddrawer
+        MatrixRotateX(3.14159 / 2.0)
     };
-    RegisterDrawableInfo testerreg = {
+
+    b = Grid2DGetBox2D(g, 7, 0);
+    DrawableCreateInfo testerreg = {
         Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
-        MatrixIdentity(), 0, worlddrawer
+        MatrixIdentity()
     };
-    Drawable mapdrawable = CreateDrawable( mapregister );
-    Drawable testdrawable = CreateDrawable( testerreg );
+    Drawable mapdrawable = CreateDrawable( worlddrawer, mapregister );
+    Drawable testdrawable = CreateDrawable( worlddrawer, testerreg );
     ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() ));
     ExitOnError(DrawableSetTransform( testdrawable, MatrixIdentity() ));
 

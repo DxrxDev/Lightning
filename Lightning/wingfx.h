@@ -105,16 +105,13 @@ typedef struct MeshResource_t {
     Vertex   *vertdata; uint32_t vertcount;
     uint32_t *inddata;  uint32_t indcount;
 } MeshResource_t;
-typedef struct {
+typedef struct DrawableCreateInfo{
     MeshResource_t mesh; bool discard;
     Matrix transform;
+} DrawableCreateInfo;
 
-    uint32_t usememory; // 0 means default memory block (only implemented option)
-    Drawer drawer;
-} RegisterDrawableInfo;
-
-Drawable CreateDrawable( RegisterDrawableInfo rdi );
-Return_t DrawableSetVisability( Drawable, bool vis );
+Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi );
+Return_t DrawableSetVisability( Drawable dr, bool vis );
 Return_t DrawableSetTransform( Drawable dr, Matrix m );
 
 // void UpdateVertexBuffer( MeshResource_t t, uint32_t offset );
@@ -175,6 +172,8 @@ typedef struct DrawerCreateInfo {
     const char *fshader;
     DrawerDrawMethodEnum drawmethod;
     bool transparency;
+
+    uint32_t vertexcount, indexcount;
 } DrawerCreateInfo;
 Drawer DrawerCreate( DrawerCreateInfo dci );
 
