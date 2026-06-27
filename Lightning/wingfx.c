@@ -369,6 +369,11 @@ typedef struct UniformBuffer {
     uint32_t bin, loc;
 } UniformBuffer;
 
+struct resbuf {
+    bool hc;
+    uint32_t offset;
+    uint32_t size;
+};
 typedef struct DrawerDef {
     VkPipeline pipeline; 
     VkPipelineLayout pipelinelayout;
@@ -377,7 +382,6 @@ typedef struct DrawerDef {
     VkDescriptorSet       discset;
     VkDescriptorSetLayout disclayout;
   
-    ECS_t bufferdict;
     GraphicsBuffer buffers, hcbuffers;
     size_t vsize, voffset, isize, ioffset;
     BA discoffsets;
@@ -461,8 +465,8 @@ Return_t CreateUiLayouts();
 Return_t CreateUiPipeline();
 Return_t CreateUiBuffers();
 
-void UpdateVertexBuffer( MeshResource_t t, uint32_t offset );
-void UpdateIndexBuffer( MeshResource_t t, uint32_t offset );
+void UpdateVertexBuffer( Drawer drawer, MeshResource_t t, uint32_t offset );
+void UpdateIndexBuffer( Drawer drawer, MeshResource_t t, uint32_t offset );
 
 bool CheckSuitabilityOfDevice( VkPhysicalDevice dev, VkSurfaceKHR sur, uint32_t *graphics, uint32_t *present ){
     uint32_t g, p;
@@ -1405,14 +1409,9 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     Drawer currdraw = gfx.drawers + (gfx.drawersused-1);
     uint32_t totalbuffersize = 0;
     uint32_t totalhcbuffersize = 0;
-
-    ComponentDefine ecscompdefs[] = {
-        {"hc", sizeof(bool), NULL },
-        {"s", sizeof(uint32_t), NULL },
-        {"b", sizeof(uint32_t), NULL },
-        { 0, 0, 0 },
-    };
-    currdraw->bufferdict = ECS_Create( dci.resourceinfocount, ecscompdefs );
+    
+    BADefine discoffsetsdefine = { sizeof(struct resbuf), dci.resourceinfocount };
+    currdraw->discoffsets = BACreate( discoffsetsdefine );
 
     /* SHADERS */
 
@@ -1673,9 +1672,13 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             dslayoutbinding[r].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             ++uniformc;
             if (dci.resourceinfos[r].uniform.hostvisable){
+                *(struct resbuf*)BAGetPointer(currdraw->discoffsets, r)
+                    = (struct resbuf){true, totalhcbuffersize, dci.resourceinfos[r].uniform.size };
                 totalhcbuffersize += dci.resourceinfos[r].uniform.size;
             }
             else {
+                *(struct resbuf*)BAGetPointer(currdraw->discoffsets, r)
+                    = (struct resbuf){false, totalbuffersize, dci.resourceinfos[r].uniform.size };
                 totalbuffersize += dci.resourceinfos[r].uniform.size;
             }
             break;
@@ -2062,7 +2065,7 @@ void WindowClearScreen( ){
 
 }
 
-void UpdateVertexBuffer( MeshResource_t t, uint32_t offset ){
+void UpdateVertexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
     GraphicsBuffer interbuffer;
     CreateBuffer(
         &interbuffer,
@@ -2094,12 +2097,12 @@ void UpdateVertexBuffer( MeshResource_t t, uint32_t offset ){
     vkBeginCommandBuffer(intercommand, &cbbi);
 
     VkBufferCopy cbcp = {
-        0, offset,
+        0, dr->voffset + offset,
         t.vertcount * sizeof(Vertex),
     };
     vkCmdCopyBuffer(
         intercommand, 
-        interbuffer.buffer, bufman.vtx.buffer,
+        interbuffer.buffer, dr->buffers.buffer,
         1, &cbcp
     );
 
@@ -2118,10 +2121,11 @@ void UpdateVertexBuffer( MeshResource_t t, uint32_t offset ){
     };
 
     vkQueueSubmit(gfx.graphics, 1, &submit, VK_NULL_HANDLE);
+    // vkFreeCommandBuffers( gfx.device, gfx.commandpool, 1, &intercommand );
     vkQueueWaitIdle(gfx.graphics);
     DestroyBuffer( &interbuffer );
 }
-void UpdateIndexBuffer( MeshResource_t t, uint32_t offset ){
+void UpdateIndexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
     GraphicsBuffer interbuffer;
     CreateBuffer(
         &interbuffer,
@@ -2153,7 +2157,7 @@ void UpdateIndexBuffer( MeshResource_t t, uint32_t offset ){
     vkBeginCommandBuffer(intercommand, &cbbi);
 
     VkBufferCopy cbcp = {
-        0, offset,
+        0, dr->ioffset + offset,
         t.indcount * sizeof(uint32_t),
     };
     vkCmdCopyBuffer(
@@ -2176,17 +2180,22 @@ void UpdateIndexBuffer( MeshResource_t t, uint32_t offset ){
         .pSignalSemaphores = 0
     };
 
-    vkQueueSubmit(gfx.graphics, 1, &submit, VK_NULL_HANDLE);    
+    vkQueueSubmit(gfx.graphics, 1, &submit, VK_NULL_HANDLE);
+    // vkFreeCommandBuffers( gfx.device, gfx.commandpool, 1, &intercommand );
     vkQueueWaitIdle(gfx.graphics);
     DestroyBuffer( &interbuffer );
 }
 Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t size, uint32_t offset ){
-    void* mappeddata;
-    vkMapMemory( gfx.device, dr->hcbuffers.memory, 0, dr->hcbuffers.sizeondevice, 0, &mappeddata);
-    void *mapto = mappeddata + offset;
-    memcpy(mapto, data, size);
-    vkUnmapMemory(gfx.device, dr->hcbuffers.memory);
-    
+    struct resbuf *resbufptr = BAGetPointer(dr->discoffsets, resid);
+    if (!resbufptr) return "Resource does not exist";
+    if (resbufptr->hc){
+        void* mappeddata;
+        vkMapMemory( gfx.device, dr->hcbuffers.memory, resbufptr->offset, resbufptr->size, 0, &mappeddata);
+        void *mapto = mappeddata + offset;
+        memcpy(mapto, data, size);
+        vkUnmapMemory(gfx.device, dr->hcbuffers.memory);
+    }
+        
     return 0;
 }
 
@@ -2237,7 +2246,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             vmem = vmem->next;
         }
     }
-    UpdateVertexBuffer( rdi.mesh, voffset );
+    UpdateVertexBuffer( drawer, rdi.mesh, voffset );
 
     free( rdi.mesh.vertdata );
     free( rdi.mesh.inddata );
@@ -2273,7 +2282,7 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
 }
 
 
-void RegenerateIndicies(){
+void RegenerateIndicies( Drawer drawer ){
     MeshMemory *mem = &bufman.vtxmem;
     uint32_t buffer[1024];
     uint32_t intobuffer = 0;
@@ -2290,7 +2299,7 @@ void RegenerateIndicies(){
                     0, 0,
                     buffer, 1024
                 };
-                UpdateIndexBuffer( m, updatedinds );
+                UpdateIndexBuffer( drawer, m, updatedinds );
                 updatedinds += 1024;
                 intobuffer = 0;
             }
@@ -2303,7 +2312,7 @@ void RegenerateIndicies(){
         0, 0,
         buffer, intobuffer
     };
-    UpdateIndexBuffer( m, updatedinds );
+    UpdateIndexBuffer( drawer, m, updatedinds );
 }
 
 void StartRenderPass(uint32_t image){
@@ -2348,7 +2357,7 @@ void EndRenderPass( ){
 void WindowDraw( Drawer drawer, Drawable drawable ){
     if (bufman.memupdated){
         bufman.memupdated = false;
-        RegenerateIndicies();
+        RegenerateIndicies( drawer );
     }
 
     vkWaitForFences( gfx.device, 1, &gfx.feninflight, VK_TRUE, UINT64_MAX );
@@ -2366,11 +2375,12 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
     StartRenderPass( imageindex );
     vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, drawer->pipeline );
 
-    VkBuffer buffers[] = {bufman.vtx.buffer};
-    VkDeviceSize offsets[] = {0};
+    VkBuffer buffers[] = { drawer->buffers.buffer };
+    VkDeviceSize offsets[] = { drawer->voffset };
+    // TODO: fuuuuuck no okay i need seperate buffers for the mf
     vkCmdBindVertexBuffers(gfx.drawcommand, 0, 1, buffers, offsets);
 
-    vkCmdBindIndexBuffer( gfx.drawcommand, bufman.ind.buffer, 0, VK_INDEX_TYPE_UINT32 );
+    vkCmdBindIndexBuffer( gfx.drawcommand, drawer->buffers.buffer, drawer->ioffset, VK_INDEX_TYPE_UINT32 );
 
     VkDescriptorSet sets[] = {
         drawer->discset

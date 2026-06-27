@@ -139,6 +139,6 @@ void BASet( BA comarr, Data_t data, uint32_t count, uint32_t at ){
     if ((at + count) >= comarr->count) return;
     memcpy( comarr->data + at, data, count * comarr->stride );
 }
-nodisc Data_t BaGetPointer( BA comarr, uint32_t at ){
+nodisc Data_t BAGetPointer( BA comarr, uint32_t at ){
     return comarr->data + (at * comarr->stride);
 }

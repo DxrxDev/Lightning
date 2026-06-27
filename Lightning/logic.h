@@ -44,6 +44,6 @@ void   BADestroy( BA comarr );
 
 nodisc uint32_t BAGetStride( BA comarr );
 void            BASet( BA comarr, Data_t data, uint32_t count, uint32_t at );
-nodisc Data_t   BaGetPointer( BA comarr, uint32_t at );
+nodisc Data_t   BAGetPointer( BA comarr, uint32_t at );
 
 #endif

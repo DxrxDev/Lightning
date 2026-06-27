@@ -111,6 +111,7 @@ typedef struct DrawableCreateInfo{
 } DrawableCreateInfo;
 
 Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi );
+Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t size, uint32_t offset );
 Return_t DrawableSetVisability( Drawable dr, bool vis );
 Return_t DrawableSetTransform( Drawable dr, Matrix m );
 
