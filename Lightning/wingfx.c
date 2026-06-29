@@ -1549,6 +1549,8 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     currdraw->voffset = 0;
     totalbuffersize += (dci.vertexcount * currdraw->vsize);
 
+    printf("fbhebweivfb %d %d\n", totalbuffersize, 0);
+
     currdraw->isize = sizeof(uint32_t);
     currdraw->ioffset = currdraw->voffset + totalbuffersize;
     totalbuffersize += (dci.indexcount * currdraw->isize);
@@ -1749,7 +1751,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         totalbuffersize,
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-    );   
+    );
     CreateBuffer(
         &currdraw->hcbuffers,
         totalhcbuffersize,
@@ -2100,6 +2102,7 @@ void UpdateVertexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
         0, dr->voffset + offset,
         t.vertcount * sizeof(Vertex),
     };
+    printf("aaaaa%d\n",offset);
     vkCmdCopyBuffer(
         intercommand, 
         interbuffer.buffer, dr->buffers.buffer,
@@ -2162,9 +2165,10 @@ void UpdateIndexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
     };
     vkCmdCopyBuffer(
         intercommand, 
-        interbuffer.buffer, bufman.ind.buffer,
+        interbuffer.buffer, dr->buffers.buffer,
         1, &cbcp
     );
+    printf("bbbbb %d, %d\n",dr->ioffset,offset);
 
     vkEndCommandBuffer(intercommand);
 
@@ -2410,7 +2414,7 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
         MatrixPerspective(gfx.cam.fov, gfx.cam.aspect, near, far)
     );
     vkCmdPushConstants( gfx.drawcommand, drawer->pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &m);
-    vkCmdDrawIndexed( gfx.drawcommand, bufman.ind.sizeofdata / sizeof(uint32_t), 1, 0, 0, 0 );
+    vkCmdDrawIndexed( gfx.drawcommand, 12, 1, 0, 0, 0 );
 
     "eva is so beautiful <3";
 

@@ -49,8 +49,8 @@ int main(){
         .drawmethod = DDME_triangle,
         .transparency = true,
 
-        .vertexcount = 1000,
-        .indexcount = 1000
+        .vertexcount = 200,
+        .indexcount = 100
     };
     Drawer worlddrawer = DrawerCreate( dci );
 
@@ -110,8 +110,12 @@ int main(){
     };
     Drawable mapdrawable = CreateDrawable( worlddrawer, mapregister );
     Drawable testdrawable = CreateDrawable( worlddrawer, testerreg );
+
+    printf("fuck my life\n");
     ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() ));
+    printf("fuck my lifee\n");
     ExitOnError(DrawableSetTransform( testdrawable, MatrixIdentity() ));
+    printf("fuck my lifeee\n");
 
     CameraInfo ci = {
         (Vector3){0, -1, 1},
@@ -206,8 +210,9 @@ int main(){
 
         ClearWindowEvents(events);
     
-        
+        //printf("gagagaga\n");
         ExitOnError(DrawableSetTransform( testdrawable, MatrixTranslate(0, balls, 0) ));
+        //printf("yayyayyaya\n");
 
         WindowDraw( worlddrawer, mapdrawable );
         ui_draw( root );
