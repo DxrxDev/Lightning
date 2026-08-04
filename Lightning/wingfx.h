@@ -90,6 +90,7 @@ These represent the data to be passed and processed by a Drawer.
 */
 typedef struct DrawableDef *Drawable;
 typedef struct DrawerDef *Drawer;
+struct CameraInfo;
 
 typedef struct Vertex{
     Vector3 pos;
@@ -102,7 +103,7 @@ typedef struct Vertex{
 typedef struct MeshResource_t {
     void     *vertdata; uint32_t vertcount;
     uint32_t *inddata;  uint32_t indcount;
-    uint32_t  vertsize; bool isflat;
+    uint32_t  vertsize;
     uint32_t trspos, matpos;
 } MeshResource_t;
 typedef struct DrawableCreateInfo{
@@ -175,19 +176,24 @@ typedef struct DrawerCreateInfo {
     bool transparency;
 
     uint32_t vertexcount, indexcount;
+
+    bool is2d;
+    struct CameraInfo *cam;
 } DrawerCreateInfo;
 Drawer DrawerCreate( DrawerCreateInfo dci );
 
 uint32_t DataTypeToSize( DrawerDataEnum dde );
 
 void WindowClearScreen( );
-void WindowDraw( Drawer drawer, Drawable drawable );
+void WindowStartDrawing( );
+void WindowDraw( Drawer drawer );
+void WindowFinishDrawing( );
 
-typedef struct CameraInfo
-{
+typedef struct CameraInfo {
     Vector3 position;
     float pitch, yaw;
     float fov, aspect;
+    bool is2d;
 } CameraInfo;
 
 void camera_set_main_camera( CameraInfo cam );
@@ -195,59 +201,12 @@ CameraInfo camera_get_main_camera( );
 Vector3 camera_get_forward_XZ( CameraInfo cam );
 Vector3 camera_get_forward_XYZ( CameraInfo cam );
 
-#define UI_VISUAL(x) (x.type & 0x00'ff)
-#define UI_TYPE_INVALID 0xff'ff
-#define UI_TYPE_ROOT    0x00'00
-// -----
-#define UI_TYPE_HSPLIT  0x01'00
-#define UI_TYPE_VSPLIT  0x02'00
-#define UI_TYPE_GRID    0x03'00
-// -----
-#define UI_TYPE_TEXT    0x01'ff
-#define UI_TYPE_SHAPE   0x02'ff
-// -----
-typedef struct UiComponent_def *UiComponent;
-typedef void (*UiCallbackFunc)(UiComponent *, void *);
-
-typedef struct UiChildren {
-    UiComponent them;
-    uint32_t num;
-    uint32_t max;
-} UiChildren;
-typedef struct UiSpacing {
-    uint32_t mt, mr, mb, ml;
-    uint32_t bt, br, bb, bl;
-    uint32_t st, sr, sb, sl;
-} UiSpacing;
-
-#define UI_CONFIG_SPACING 0b0000'0000'0000'0001
-typedef struct UiConfigs {
-    bool usingchildren;
-    UiChildren children;
-
-    bool usingspacing;
-    UiSpacing spacing;
-} UiConfigs;
-
-nodisc UiComponent ui_create_root( );
-nodisc UiComponent ui_create_text( UiComponent parent, const char *name, uint32_t size );
-nodisc UiComponent ui_create_shape( UiComponent parent, const char *name );
-void ui_destroy( UiComponent comp );
-
-void      ui_set_configs( UiComponent comp, UiConfigs cnf );
-UiConfigs ui_get_configs( UiComponent comp );
-
-void ui_generate( UiComponent comp );
-void ui_draw( UiComponent comp );
-
 typedef void (*MeshCreateFunc)(void *data);
 typedef struct MeshCreateInfo{
     MeshCreateFunc func;
     void *data;
     uint32_t vertsize;
 } MeshCreateInfo;
-
-MeshResource_t Mesh_CreateQuad( Matrix m, Box2D tex, uint32_t trsid, uint32_t matid );
 
 MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D tex, MeshCreateInfo mci );
 

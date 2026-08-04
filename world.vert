@@ -19,7 +19,6 @@ layout (location = 1) out vec2 f_texcoords;
 
 void main(){
     gl_Position = vec4(v_pos, 1.0) * models[v_trsid] * viewproj;
-    //gl_Position = vec4(v_pos, 1.0) * viewproj;
     f_texcoords = v_tex;
     // f_pos = v_pos;
 }

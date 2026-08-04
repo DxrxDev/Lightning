@@ -390,6 +390,8 @@ typedef struct DrawerDef {
     BA discoffsets;
 
     DrawableBank db;
+
+    bool is2d;
 } DrawerDef;
 
 typedef struct DrawableDef {
@@ -852,10 +854,6 @@ Return_t InitGraphics( ){
     if (r != 0){
         return r;
     }
-//    r = CreateLayouts();
- //   if (r != 0){
-  //      return r;
-   // }
     r = CreateRenderPass();
     if (r != 0){
         return r;
@@ -869,11 +867,6 @@ Return_t InitGraphics( ){
         return r;
     }
 
-    // VkPhysicalDeviceProperties props;
-    // VkPhysicalDeviceLimits limits;
-    // vkGetPhysicalDeviceProperties(gfx.physicaldevice, &props);
-    // limits = props.limits;
-    // printf("Max memory allocations %lu\n", limits.sparseAddressSpaceSize);
     gfx.drawers = malloc(sizeof(DrawerDef) * 2);
     gfx.drawersused = 0;
     gfx.drawercount = 2; // TODO: fix this lol
@@ -1371,276 +1364,6 @@ Return_t CreateSyncVars( ){
     return 0;
 }
 
-Return_t CreateBuffers( ){
-    /*
-    bufman.memupdated = true;
-    ComponentDefine gfxdefs[] = {
-        {"t", sizeof(Matrix), 0}, // Transforms
-        {0, 0, 0}
-    };
-    bufman.transforms = ECS_Create(1024, gfxdefs);
-
-    ComponentDefine refdefs[] = {
-        {"t", sizeof(uint32_t), 0},
-        {"m", sizeof(uint32_t), 0},
-        {0, 0, 0}
-    };
-    bufman.refs = ECS_Create(1024, refdefs);
-    
-    CreateBuffer(
-        &bufman.vtx,
-        10000 * sizeof(Vertex),
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-    );
-    bufman.vtxmem = (MeshMemory){
-        -1, -1,
-        0, 0,
-        0, 0,
-        true, UINT32_MAX
-    };
-    CreateBuffer(
-        &bufman.ind,
-        10000 * sizeof(uint32_t),
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-    );
-    */
-    return 0;
-}
-
-Return_t CreateImageSamplers( ){
-    /*
-    DirectImage readimage = directimage_create_bmp("texture_map.bmp");
-    uint32_t
-        width = readimage.width,
-        height = readimage.height;
-        
-    uint32_t texsize = width * height * 4;
-
-    VkExtent3D sampleriamgeextent = {
-        width, height, 1
-    };
-    VkImageCreateInfo ici = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext = 0,
-        .flags = 0,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .extent = sampleriamgeextent,
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE, // TODO: not assume
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &gfx.graphics_i,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-    vkCreateImage( gfx.device, &ici, 0, &samplers.image);
-    VkMemoryRequirements memreq;
-    vkGetImageMemoryRequirements( gfx.device, samplers.image, &memreq);
-
-    VkMemoryAllocateInfo mai = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = 0,
-        .allocationSize = memreq.size,
-        .memoryTypeIndex = FindMemoryType(
-            memreq.memoryTypeBits,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-        )
-    };
-    vkAllocateMemory( gfx.device, &mai, 0, &samplers.memory );
-    vkBindImageMemory( gfx.device, samplers.image, samplers.memory, 0 );
-
-    VkImageViewCreateInfo ivci = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = samplers.image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .components = {
-            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .a = VK_COMPONENT_SWIZZLE_IDENTITY
-        },
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-    vkCreateImageView( gfx.device, &ivci, 0, &samplers.imageview );
-
-    GraphicsBuffer interbuffer;
-    CreateBuffer(
-        &interbuffer,
-        texsize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-    );
-    
-    void *texdata;
-    vkMapMemory( gfx.device, interbuffer.memory, 0, texsize, 0, &texdata );
-        memcpy(texdata, readimage.data, texsize);
-    printf("got here, memory set! %d\n", __LINE__);
-    vkUnmapMemory(gfx.device, interbuffer.memory);
-
-    VkCommandBuffer intercommand;
-    VkCommandBufferAllocateInfo cbai = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = 0,
-        .commandPool = gfx.commandpool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1
-    };
-    vkAllocateCommandBuffers( gfx.device, &cbai, &intercommand );
-    VkCommandBufferBeginInfo cbbi = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = 0,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        .pInheritanceInfo = 0
-    };
-    vkBeginCommandBuffer(intercommand, &cbbi);
-
-    VkImageMemoryBarrier imbb = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = 0,
-        .srcAccessMask = 0,
-        .dstAccessMask = 0,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, // Ignoring anything on image
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // Not swapping queue
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // ownership of img
-        .image = samplers.image,
-        .subresourceRange = (VkImageSubresourceRange){
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-    VkImageMemoryBarrier imba = imbb;
-    imba.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    imba.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(
-        intercommand,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0, 0,
-        0, 0,
-        1, &imbb
-    );
-    VkBufferImageCopy bic = {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,   // ASSUME THE EXTENT
-        .bufferImageHeight = 0, // IS THE TEXTURE SIZE
-        .imageSubresource = (VkImageSubresourceLayers){
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        },
-        .imageOffset = 0,
-        .imageExtent = (VkExtent3D){
-            .width = width,
-            .height = height,
-            .depth = 1
-        }
-    };
-    vkCmdCopyBufferToImage(
-        intercommand,
-        interbuffer.buffer,
-        samplers.image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &bic
-    );
-
-    vkCmdPipelineBarrier(
-        intercommand,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0, 0,
-        0, 0,
-        1, &imba
-    );
-
-    vkEndCommandBuffer(intercommand);
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = 0,
-        .pWaitDstStageMask = 0,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &intercommand,
-        .signalSemaphoreCount = 0,
-        .pSignalSemaphores = 0
-    };
-    vkQueueSubmit(gfx.graphics, 1, &submitInfo, VK_NULL_HANDLE);
-
-    struct VkSamplerCreateInfo sci = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .pNext = 0,
-        .flags = 0,
-        .magFilter = VK_FILTER_NEAREST,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .mipLodBias = 0.0f,
-        .anisotropyEnable = VK_FALSE,
-        .maxAnisotropy = 0.0f,
-        .compareEnable = VK_FALSE,
-        .compareOp = VK_COMPARE_OP_ALWAYS,
-        .minLod = 0.0f,
-        .maxLod = 0.0f,
-        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-        .unnormalizedCoordinates = VK_FALSE
-    };
-    vkCreateSampler( gfx.device, &sci, nullptr, &samplers.sampler );
-    
-    
-    VkDescriptorSetAllocateInfo sdai = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .pNext = 0,
-        .descriptorPool = gfx.descriptorpool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &gfx.texturelayout
-    };
-    if (vkAllocateDescriptorSets(gfx.device, &sdai, &gfx.texture) != VK_SUCCESS) {
-        ExitOnError("Couldn't allocate descriptor set for texture sampler!");
-    }
-    
-    VkDescriptorImageInfo samplerinfo = {
-        .sampler = samplers.sampler,
-        .imageView = samplers.imageview,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    };
-    VkWriteDescriptorSet descriptorwrite = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = 0,
-        .dstSet = gfx.texture,
-        .dstBinding = 0, // CHANGEDDD
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &samplerinfo,
-        .pBufferInfo = 0,
-        .pTexelBufferView = 0
-    };
-    // Update the descriptor set to bind the uniform buffer
-    vkUpdateDescriptorSets(gfx.device, 1, &descriptorwrite, 0, 0);
-    */
-    return 0;
-}
-
 Drawer DrawerCreate( DrawerCreateInfo dci ){
     if(gfx.drawersused < gfx.drawercount){
         gfx.drawersused++;
@@ -1649,6 +1372,8 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         return NULL;
     }
     Drawer currdraw = gfx.drawers + (gfx.drawersused-1);
+
+    currdraw->is2d = dci.is2d;
 
     currdraw->db.memupdated = true;
     ComponentDefine gfxdefs[] = {
@@ -2340,18 +2065,16 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     if (rdi.mesh.vertsize != drawer->vsize){
         return 0;
     }
-    printf("fuckaye\n");
     drawer->db.memupdated = true;
     MeshMemory *vmem = &drawer->db.vtxmem;
     bool foundslot = false;
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
    
-    /*
     if (!MatrixIsZero(rdi.transform)){
         for (uint32_t i = 0; i < rdi.mesh.vertcount; ++i){
             void *vertptr = rdi.mesh.vertdata + (i * rdi.mesh.vertsize);
-            if (rdi.mesh.isflat){
+            if (drawer->is2d){
                 *(Vector2*)vertptr = Vector2Transform(
                     *(Vector2*)vertptr, rdi.transform
                 );
@@ -2363,7 +2086,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             }
         }
     }
-    */
+    
     
     dr->ref = ECS_AddEntity( drawer->db.refs );
     if (dr->ref == UINT32_MAX){
@@ -2403,8 +2126,10 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     UpdateVertexBuffer( drawer, rdi.mesh, voffset );
     UpdateIndexBuffer( drawer, rdi.mesh, 0 );
 
-    free( rdi.mesh.vertdata );
-    free( rdi.mesh.inddata );
+    if (rdi.discard){
+        free( rdi.mesh.vertdata );
+        free( rdi.mesh.inddata );
+    };
 
     dr->drawer = drawer;
     return dr;
@@ -2509,26 +2234,34 @@ void EndRenderPass( ){
     vkEndCommandBuffer(gfx.drawcommand);
 }
 
-void WindowDraw( Drawer drawer, Drawable drawable ){
-    if (drawer->db.memupdated){
-        printf("updating inds\n");
-        drawer->db.memupdated = false;
-        // RegenerateIndicies( drawer );
-    }
-
+static uint32_t onimage = 0;
+void WindowStartDrawing(){
     vkWaitForFences( gfx.device, 1, &gfx.feninflight, VK_TRUE, UINT64_MAX );
     vkResetFences( gfx.device, 1, &gfx.feninflight );
 
-    uint32_t imageindex;
     VkResult r =
-    vkAcquireNextImageKHR( gfx.device, gfx.swapchain, UINT64_MAX, gfx.semimagegrabbed, VK_NULL_HANDLE, &imageindex );
-
-    if (r != 0){
+    vkAcquireNextImageKHR(
+        gfx.device,
+        gfx.swapchain,
+        UINT64_MAX,
+        gfx.semimagegrabbed,
+        VK_NULL_HANDLE,
+        &onimage
+    );
+    if (r == 0 || r == VK_SUBOPTIMAL_KHR){}
+    else{
         printf("Failure grabbing image %d\n", r);
         ExitOnError("Exiting...");
     }
 
-    StartRenderPass( imageindex );
+    StartRenderPass( onimage );
+}
+void WindowDraw( Drawer drawer ){
+    if (drawer->db.memupdated){
+        printf("updating inds\n");
+        drawer->db.memupdated = false;
+        // RegenerateIndicies( drawer );
+    } 
     vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, drawer->pipeline );
 
     VkBuffer buffers[] = { drawer->buffers.buffer };
@@ -2570,7 +2303,8 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
     vkCmdDrawIndexed( gfx.drawcommand, 6, 1, 0, 0, 0 );
 
     "eva is so beautiful <3";
-
+}
+void WindowFinishDrawing( ){
     EndRenderPass( );
 
     VkSemaphore waitSemaphores[] = {gfx.semimagegrabbed};
@@ -2587,10 +2321,12 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = signalSemaphores
     };
-    r = vkQueueSubmit( gfx.graphics, 1, &submit, gfx.feninflight );
-    if (r != 0){
+    VkResult r = vkQueueSubmit( gfx.graphics, 1, &submit, gfx.feninflight );
+    if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR){}
+    else {
         printf("Failure Submitting draw command... fuck %d\n", r);
     }
+    
 
     VkSwapchainKHR swapchains[] = {gfx.swapchain};
     VkPresentInfoKHR presentInfo = {
@@ -2600,13 +2336,16 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
         .pWaitSemaphores = signalSemaphores,
         .swapchainCount = 1,
         .pSwapchains = swapchains,
-        .pImageIndices = &imageindex,
+        .pImageIndices = &onimage,
     };
 
-    if (vkQueuePresentKHR( gfx.present, &presentInfo ) != VK_SUCCESS){
-        printf("Couldn't Present image :/\n");
+    r = vkQueuePresentKHR( gfx.present, &presentInfo );
+    if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR){}
+    else {
+        printf("Couldn't Present image :/ (%d)\n", r);
         exit(-1);
     }
+    
     vkQueueWaitIdle(gfx.present);
 }
 
@@ -2631,72 +2370,6 @@ Vector3 camera_get_forward_XYZ( CameraInfo cam ){
 }
 
 /* UI & MISC */
-
-typedef struct UiComponent_def {
-    const char *name;
-    uint32_t    type;
-    UiConfigs  cnf;
-
-    struct UiComponent_def *parent;
-} UiComponent_def;
-static void ui_expand_if_needed( UiComponent comp ){
-    if (!comp->cnf.usingchildren)
-        return;
-    /* Has children */
-    if ((comp->cnf.children.num+1) < comp->cnf.children.max)
-        return;
-    /* There isn't enough room */
-    uint32_t curmax = comp->cnf.children.max;
-    uint32_t newmax = curmax + (curmax / 2);
-    comp->cnf.children.them = realloc(
-        comp->cnf.children.them,
-        sizeof (UiComponent_def) * newmax
-    );
-}
-UiComponent ui_create_root( ){
-    UiComponent ret = malloc(sizeof(UiComponent_def));
-
-    ret->type = UI_TYPE_ROOT;
-    ret->cnf = (UiConfigs){};
-    ret->cnf.usingchildren = true;
-
-    ret->parent = 0;
-
-    UiChildren *kids = &ret->cnf.children;
-    kids->max = 16;
-    kids->them = (UiComponent_def *)calloc( kids->max, sizeof(UiComponent_def) );
-    kids->num = 0;
-
-    return ret;
-}
-UiComponent ui_create_text( UiComponent parent, const char *name, uint32_t size ){
-    if (!parent->cnf.usingchildren)
-        return 0;
-    ui_expand_if_needed( parent );
-    UiComponent ret = parent->cnf.children.them + parent->cnf.children.num;
-
-    return ret;
-}
-UiComponent ui_create_shape( UiComponent parent, const char *name ){
-    return (UiComponent){};
-}
-void ui_destroy( UiComponent comp ){
-
-}
-
-void ui_set_configs( UiComponent comp, UiConfigs cnf ){
-
-}
-UiConfigs ui_get_configs( UiComponent comp ){
-    return (UiConfigs){};
-}
-
-void ui_generate( UiComponent comp ){
-
-}
-void ui_draw( UiComponent comp ){
-
-}
 
 MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D tex, MeshCreateInfo mci ){
     MeshResource_t ret;

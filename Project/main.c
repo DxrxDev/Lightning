@@ -55,7 +55,9 @@ int main(){
         .transparency = true,
 
         .vertexcount = 1000,
-        .indexcount = 100
+        .indexcount = 100,
+
+        .is2d = false
     };
     Drawer worlddrawer = DrawerCreate( dci );
     
@@ -85,10 +87,11 @@ int main(){
         .transparency = true,
 
         .vertexcount = 1000,
-        .indexcount = 100
+        .indexcount = 100,
+
+        .is2d = true
     };
-    //Drawer uidrawer = DrawerCreate( dci2 );
-    
+    Drawer uidrawer = DrawerCreate( dci2 );
 
     ComponentDefine comps[] = {
         {"pos", sizeof(Position), 0},
@@ -118,7 +121,7 @@ int main(){
     };
     DrawableCreateInfo mapregister = {
         MeshCreateGrid( 0, 0, 1.0f, b, mci ),
-        false, MatrixRotateX(3.14159 / 2.0), true
+        false, MatrixRotateX(3.14159 / 2.0)
     };
     Drawable mapdrawable = CreateDrawable( worlddrawer, mapregister );
 
@@ -134,14 +137,15 @@ int main(){
     MeshResource_t testmesh = {
         .vertdata = testdata, .vertcount = 3,
         .inddata = testdata2, .indcount = 3,
-        .vertsize = sizeof(Vert2D)
+        .vertsize = sizeof(Vert2D),
+        0, 0
     };
-    /*
     DrawableCreateInfo testreg = {
-        Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
-        MatrixZero(), true
+        testmesh, false,
+        MatrixZero()
     };
-    */
+    Drawable testdrawable = CreateDrawable( uidrawer, testreg );
+    printf("geep %p\n", testdrawable);
 
     CameraInfo ci = {
         (Vector3){0, -1, 1},
@@ -149,13 +153,7 @@ int main(){
         3.14159 / 3.0, 1280.0 / 720.0
     };
     camera_set_main_camera( ci );
- 
-    UiComponent root = ui_create_root();
-    UiComponent cmon = ui_create_text( root, "HELLO UI", 12);
 
-    ui_generate( root );
-
-    float balls = 0;
     while (AppRunning()){
         WindowClearScreen( );
         WindowEvent *events = GetWindowEvents(), *e = events;
@@ -189,15 +187,6 @@ int main(){
             e = e->next;
         }
 
-        if(
-            window_key_down('e') &&
-            window_key_down('v') &&
-            window_key_down('a')
-        )
-        {
-            printf("Eva is the most gorgeous woman ever, and I'm the luckies man EVER. I love you :)\n");
-        }
-
         Vector3 cammoving = camera_get_forward_XZ(ci);
 
         if(window_key_down('w')){
@@ -227,10 +216,8 @@ int main(){
         if(window_key_down('k'))
             ci.pitch -= 1.0 / 60.0;
 
-        if (window_key_down('t'))
-            balls += 0.016;
-        if (window_key_down('g'))
-            balls -= 0.016;
+        //if (window_key_down('t'))
+        //if (window_key_down('g'))
 
         camera_set_main_camera( ci );
 
@@ -238,11 +225,13 @@ int main(){
     
         ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() )); //MatrixTranslate(0, balls, 0) ));
 
-        WindowDraw( worlddrawer, mapdrawable );
-        ui_draw( root );
-    }
+        WindowStartDrawing();
 
-    ui_destroy( root );
+        WindowDraw( worlddrawer );
+        WindowDraw( uidrawer );
+        
+        WindowFinishDrawing();
+    }
 
     return 0;
 }
