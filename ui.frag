@@ -8,6 +8,6 @@ layout(location = 1) in vec2 f_texcoords;
 layout(location = 0) out vec4 oCol;
 
 void main(){
-    // vec4(0.15, 0.45, 0.6, 1);
-    oCol = texture(texSampler, f_texcoords);
+    oCol = vec4(0.15, 0.45, 0.6, 1);
+    //oCol = texture(texSampler, f_texcoords);
 }

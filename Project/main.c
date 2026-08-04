@@ -11,6 +11,11 @@ typedef struct Position{
     float x, y, z;
 } Position;
 
+typedef struct {
+    Vector2 pos, tex;
+    Vector4 col;
+} Vert2D;
+
 int main(){
     InitWindow( 1280, 720, "HIYA", 0 );
 
@@ -49,32 +54,41 @@ int main(){
         .drawmethod = DDME_triangle,
         .transparency = true,
 
-        .vertexcount = 200,
+        .vertexcount = 1000,
         .indexcount = 100
     };
     Drawer worlddrawer = DrawerCreate( dci );
-
-    /*
+    
     DrawerVertexInfo dvi2[] = {
         {0, 0, DDE_float2},
         {0, 1, DDE_float2},
         {0, 2, DDE_float4}
     };
     DrawerResourceInfo dri2[] = { 
-        {0, 0, DRTE_sampler, DRSE_fragment},
+        {
+            0, 0,
+            DRTE_sampler, DRSE_fragment,
+            .sampler = {
+                "texture_map.bmp"
+            }
+        },
     };
     DrawerCreateInfo dci2 = {
         .vertexinfos = dvi2,
         .vertexinfocount = 3,
-        .resourceinfos = dri,
-        .resourceinfocount = 2,
+        .resourceinfos = dri2,
+        .resourceinfocount = 1,
 
         .vshader = "ui.vert.spirv",
         .fshader = "ui.frag.spirv",
-        .drawmethod = DDME_triangle
+        .drawmethod = DDME_triangle,
+        .transparency = true,
+
+        .vertexcount = 1000,
+        .indexcount = 100
     };
-    Drawer uidrawer = DrawerCreate( dci2 );
-    */
+    //Drawer uidrawer = DrawerCreate( dci2 );
+    
 
     ComponentDefine comps[] = {
         {"pos", sizeof(Position), 0},
@@ -97,25 +111,37 @@ int main(){
         0, 0
     };
     Box2D b = Grid2DGetBox2D(g, 7, 1);
+    uint32_t trsmat[2] = {0, 0};
 
-    DrawableCreateInfo mapregister = {
-        Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
-        MatrixRotateX(3.14159 / 2.0)
+    MeshCreateInfo mci = {
+        0, trsmat,sizeof(Vertex)
     };
-
-    b = Grid2DGetBox2D(g, 7, 0);
-    DrawableCreateInfo testerreg = {
-        Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
-        MatrixIdentity()
+    DrawableCreateInfo mapregister = {
+        MeshCreateGrid( 0, 0, 1.0f, b, mci ),
+        false, MatrixRotateX(3.14159 / 2.0), true
     };
     Drawable mapdrawable = CreateDrawable( worlddrawer, mapregister );
-    Drawable testdrawable = CreateDrawable( worlddrawer, testerreg );
 
-    printf("fuck my life\n");
     ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() ));
-    printf("fuck my lifee\n");
-    ExitOnError(DrawableSetTransform( testdrawable, MatrixIdentity() ));
-    printf("fuck my lifeee\n");
+
+
+    Vert2D testdata[] = {
+        {{-1,  1}, {0,0}, {0,0,0,0}},
+        {{-1, -1}, {0,0}, {0,0,0,0}},
+        {{ 1,  1}, {0,0}, {0,0,0,0}},
+    };
+    uint32_t testdata2[] = {0, 1, 2};
+    MeshResource_t testmesh = {
+        .vertdata = testdata, .vertcount = 3,
+        .inddata = testdata2, .indcount = 3,
+        .vertsize = sizeof(Vert2D)
+    };
+    /*
+    DrawableCreateInfo testreg = {
+        Mesh_CreateQuad( MatrixIdentity(), b, 0, 0 ), true,
+        MatrixZero(), true
+    };
+    */
 
     CameraInfo ci = {
         (Vector3){0, -1, 1},
@@ -210,9 +236,7 @@ int main(){
 
         ClearWindowEvents(events);
     
-        //printf("gagagaga\n");
-        ExitOnError(DrawableSetTransform( testdrawable, MatrixTranslate(0, balls, 0) ));
-        //printf("yayyayyaya\n");
+        ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() )); //MatrixTranslate(0, balls, 0) ));
 
         WindowDraw( worlddrawer, mapdrawable );
         ui_draw( root );

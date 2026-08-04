@@ -352,22 +352,22 @@ typedef struct GraphicsBuffer{
 
 } GraphicsBuffer;
 
-/*
-typedef struct StackedBuffer {
-    BA buffers; // VkBuffer
+typedef struct GraphicsImages{
+    BA images, views, samplers;
+    BA offsets, sizes;
     VkDeviceMemory memory;
+} GraphicsImages;
 
-    uint32_t sizeofdata, sizeondevice;
-
-    VkBufferUsageFlags usage;
-    VkMemoryPropertyFlags properties;
-} StackedBuffer;
-*/
-
-typedef struct UniformBuffer {
-    GraphicsBuffer buf;
-    uint32_t bin, loc;
-} UniformBuffer;
+typedef struct MeshMemory{
+    int64_t start, end;
+    uint32_t *inds, indcount;
+    struct MeshMemory *prev, *next;
+    bool visable; uint32_t ref;
+} MeshMemory;
+typedef struct DrawableBank{
+    MeshMemory vtxmem; bool memupdated;
+    ECS_t refs, transforms;   
+} DrawableBank;
 
 struct resbuf {
     bool hc;
@@ -383,8 +383,13 @@ typedef struct DrawerDef {
     VkDescriptorSetLayout disclayout;
   
     GraphicsBuffer buffers, hcbuffers;
-    size_t vsize, voffset, isize, ioffset;
+    //GraphicsBuffer index
+    GraphicsImages images;
+    size_t vsize, voffset, vnum;
+    size_t isize, ioffset, inum;
     BA discoffsets;
+
+    DrawableBank db;
 } DrawerDef;
 
 typedef struct DrawableDef {
@@ -401,6 +406,7 @@ static struct Graphics_instance{
     VkDevice         device;
     uint32_t         graphics_i, present_i;
     VkQueue          graphics,   present;
+    uint32_t         memallignment;
 
     VkSharingMode      sharingmode;
     VkSurfaceFormatKHR surfaceformat;
@@ -432,12 +438,7 @@ static struct Graphics_instance{
     CameraInfo cam;
 } gfx;
 
-typedef struct MeshMemory{
-    int64_t start, end;
-    uint32_t *inds, indcount;
-    struct MeshMemory *prev, *next;
-    bool visable; DrawableDef dr;
-} MeshMemory;
+/*
 struct {
     GraphicsBuffer vtx, ind;
     MeshMemory vtxmem; bool memupdated;
@@ -450,6 +451,7 @@ struct {
     VkSampler sampler;
     VkDeviceMemory memory;
 } samplers;
+*/
 
 Return_t CreateInstance();
 Return_t CreateDevice();
@@ -522,7 +524,11 @@ uint32_t FindMemoryType( uint32_t filter, VkMemoryPropertyFlags properties ){
     vkGetPhysicalDeviceMemoryProperties(gfx.physicaldevice, &memProperties);
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i){
-        if ((filter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+        if (
+                (filter & (1 << i)) &&
+                (memProperties.memoryTypes[i].propertyFlags & properties)
+                == properties
+        ) {
             return i;
         }
     }
@@ -570,6 +576,243 @@ void DestroyBuffer( GraphicsBuffer *buffer ){
     vkFreeMemory( gfx.device, buffer->memory, 0 );
 }
 
+void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
+    if (num == 0) return;
+
+    BADefine badefs = { sizeof(VkImage), num };
+    dr->images.images = BACreate( badefs );
+    dr->images.views = BACreate( badefs );
+    dr->images.samplers = BACreate( badefs );
+    struct VkSamplerCreateInfo newsamp = { /* implement multiple samplers later */
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = 0,
+        .flags = 0,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 0.0f,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE
+    };
+    vkCreateSampler( gfx.device, &newsamp, NULL, BAGetPointer(dr->images.samplers, 0) );
+
+    badefs.datasize = sizeof(uint32_t);
+    dr->images.offsets = BACreate( badefs );
+    dr->images.sizes = BACreate( badefs );
+
+    uint32_t totalmemoryneeded = 0;    
+    uint32_t biggestimage = 0;
+
+    for (uint32_t i = 0; i < num; ++i){
+        DirectImage di = directimage_dimentions_bmp(files[i]);
+        uint32_t thissize = (di.width * di.height) * 4;
+
+        *(uint32_t*)BAGetPointer(dr->images.sizes, i) = thissize;
+        *(uint32_t*)BAGetPointer(dr->images.offsets, i) = totalmemoryneeded;
+
+        totalmemoryneeded += thissize;
+        if (biggestimage < thissize){
+            biggestimage = thissize;
+        }
+        VkExtent3D imageextent = {
+            di.width, di.height, 1
+        };
+        VkImageCreateInfo ici = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .pNext = 0,
+            .flags = 0,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .extent = imageextent,
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE, // TODO: not assume
+            .queueFamilyIndexCount = 1,
+            .pQueueFamilyIndices = &gfx.graphics_i,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
+        vkCreateImage(
+            gfx.device,
+            &ici,
+            0,
+            BAGetPointer(dr->images.images, i)
+        );
+    }
+
+
+    totalmemoryneeded += totalmemoryneeded % gfx.memallignment;
+    VkMemoryRequirements memreq;
+    vkGetImageMemoryRequirements( gfx.device, *(VkImage*)BAGetPointer(dr->images.images, 0), &memreq);
+    VkMemoryAllocateInfo mai = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = 0,
+        .allocationSize = totalmemoryneeded,
+        .memoryTypeIndex = FindMemoryType(
+            memreq.memoryTypeBits,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+        )
+    };
+    vkAllocateMemory( gfx.device, &mai, 0,  &dr->images.memory);
+
+    for (uint32_t i = 0; i < num; ++i){
+        vkBindImageMemory(
+            gfx.device,
+            *(VkImage*)BAGetPointer(dr->images.images, i),
+            dr->images.memory,
+            *(uint32_t*)BAGetPointer(dr->images.offsets, i)
+        );
+        
+        VkImageViewCreateInfo ivci = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = *(VkImage*)BAGetPointer(dr->images.images, i),
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .components = {
+                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = VK_COMPONENT_SWIZZLE_IDENTITY
+            },
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+        vkCreateImageView(
+            gfx.device,
+            &ivci,
+            0,
+            BAGetPointer( dr->images.views, i )
+        );
+    }
+
+    GraphicsBuffer interbuff;
+    CreateBuffer(
+        &interbuff,
+        biggestimage,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+    VkCommandBuffer intercommand;
+    VkCommandBufferAllocateInfo cbai = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = 0,
+        .commandPool = gfx.commandpool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+    vkAllocateCommandBuffers( gfx.device, &cbai, &intercommand );
+    VkCommandBufferBeginInfo cbbi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = 0,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = 0
+    };
+    vkBeginCommandBuffer(intercommand, &cbbi);
+    void *texdata;
+    vkMapMemory( gfx.device, interbuff.memory, 0, biggestimage, 0, &texdata );
+    for (uint32_t i = 0; i < num; ++i){
+        DirectImage file =  directimage_create_bmp(files[i]);
+        memcpy(texdata, file.data, *(uint32_t*)BAGetPointer(dr->images.sizes, i));
+    
+        VkImageMemoryBarrier frombarrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = 0,
+            .srcAccessMask = 0,
+            .dstAccessMask = 0,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, // Ignoring anything on image
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // Not swapping queue
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // ownership of img
+            .image = *(VkImage*)BAGetPointer(dr->images.images, i),
+            .subresourceRange = (VkImageSubresourceRange){
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+        VkImageMemoryBarrier tobarrier = frombarrier;
+        tobarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        tobarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vkCmdPipelineBarrier(
+            intercommand,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0, 0,
+            0, 0,
+            1, &frombarrier
+        );
+        VkBufferImageCopy bic = {
+            .bufferOffset = 0,
+            .bufferRowLength = 0,   // ASSUME THE EXTENT
+            .bufferImageHeight = 0, // IS THE TEXTURE SIZE
+            .imageSubresource = (VkImageSubresourceLayers){
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            },
+            .imageOffset = 0,
+            .imageExtent = (VkExtent3D){
+                .width = file.width,
+                .height = file.height,
+                .depth = 1
+            }
+        };
+        vkCmdCopyBufferToImage(
+            intercommand,
+            interbuff.buffer,
+            *(VkImage*)BAGetPointer(dr->images.images, i),
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &bic
+        );
+    
+        vkCmdPipelineBarrier(
+            intercommand,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0, 0,
+            0, 0,
+            1, &tobarrier
+        );        
+        directimage_destroy( &file );
+    }
+    vkEndCommandBuffer(intercommand);
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = 0,
+        .pWaitDstStageMask = 0,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &intercommand,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = 0
+    };
+    vkUnmapMemory(gfx.device, interbuff.memory);
+    vkQueueSubmit(gfx.graphics, 1, &submitInfo, VK_NULL_HANDLE);
+
+    return;
+}
+
 /* OVERCOMPLICATED?
 void StackedBufferCreate(StackedBuffer *bufs, uint32_t *sizes, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties){
     uint32_t totalsize = 0;
@@ -609,31 +852,19 @@ Return_t InitGraphics( ){
     if (r != 0){
         return r;
     }
-    r = CreateLayouts();
-    if (r != 0){
-        return r;
-    }
+//    r = CreateLayouts();
+ //   if (r != 0){
+  //      return r;
+   // }
     r = CreateRenderPass();
     if (r != 0){
         return r;
     }
-    //r = CreatePipeline();
-    //if (r != 0){
-    //    return r;
-    //}
     r = CreateCommands();
     if (r != 0){
         return r;
     }
     r = CreateSyncVars();
-    if (r != 0){
-        return r;
-    }
-    r = CreateBuffers();
-    if (r != 0){
-        return r;
-    }
-    r = CreateImageSamplers();
     if (r != 0){
         return r;
     }
@@ -664,7 +895,7 @@ Return_t CreateInstance( ){
         .applicationVersion = VK_MAKE_VERSION(0, 0, 1),
         .pEngineName = "zubway_engine",
         .engineVersion = VK_MAKE_VERSION(0, 0, 1),
-        .apiVersion = VK_API_VERSION_1_0
+        .apiVersion = VK_API_VERSION_1_4
     };
     VkInstanceCreateInfo createinfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -722,6 +953,15 @@ Return_t CreateDevice( ){
 
     gfx.sharingmode = VK_SHARING_MODE_EXCLUSIVE;
     gfx.physicaldevice = physicaldevices[validat];
+    
+    VkPhysicalDeviceProperties pdproperties;
+    VkPhysicalDeviceFeatures   pdfeatures;
+    VkPhysicalDeviceLimits     pdlimits;
+    vkGetPhysicalDeviceProperties( gfx.physicaldevice, &pdproperties );
+    vkGetPhysicalDeviceFeatures( gfx.physicaldevice, &pdfeatures );
+    pdlimits = pdproperties.limits;
+
+    gfx.memallignment = pdlimits.minMemoryMapAlignment;
 
     float queuepriorities[1] = {1.0f};
     VkDeviceQueueCreateInfo devicequeuecreateinfos[2] = {
@@ -1132,6 +1372,7 @@ Return_t CreateSyncVars( ){
 }
 
 Return_t CreateBuffers( ){
+    /*
     bufman.memupdated = true;
     ComponentDefine gfxdefs[] = {
         {"t", sizeof(Matrix), 0}, // Transforms
@@ -1164,11 +1405,12 @@ Return_t CreateBuffers( ){
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-    
+    */
     return 0;
 }
 
 Return_t CreateImageSamplers( ){
+    /*
     DirectImage readimage = directimage_create_bmp("texture_map.bmp");
     uint32_t
         width = readimage.width,
@@ -1395,7 +1637,7 @@ Return_t CreateImageSamplers( ){
     };
     // Update the descriptor set to bind the uniform buffer
     vkUpdateDescriptorSets(gfx.device, 1, &descriptorwrite, 0, 0);
-    
+    */
     return 0;
 }
 
@@ -1407,6 +1649,28 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         return NULL;
     }
     Drawer currdraw = gfx.drawers + (gfx.drawersused-1);
+
+    currdraw->db.memupdated = true;
+    ComponentDefine gfxdefs[] = {
+        {"t", sizeof(Matrix), 0}, // Transforms
+        {0, 0, 0}
+    };
+    currdraw->db.transforms = ECS_Create(1024, gfxdefs);
+
+    ComponentDefine refdefs[] = {
+        {"t", sizeof(uint32_t), 0},
+        {"m", sizeof(uint32_t), 0},
+        {0, 0, 0}
+    };
+    currdraw->db.refs = ECS_Create(1024, refdefs);
+    currdraw->db.vtxmem = (MeshMemory){
+        -1, -1,
+        0, 0,
+        0, 0,
+        true, UINT32_MAX
+    };
+
+
     uint32_t totalbuffersize = 0;
     uint32_t totalhcbuffersize = 0;
     
@@ -1547,12 +1811,12 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
 
     currdraw->vsize = attributeoffset;
     currdraw->voffset = 0;
+    currdraw->vnum = dci.vertexcount;
     totalbuffersize += (dci.vertexcount * currdraw->vsize);
-
-    printf("fbhebweivfb %d %d\n", totalbuffersize, 0);
 
     currdraw->isize = sizeof(uint32_t);
     currdraw->ioffset = currdraw->voffset + totalbuffersize;
+    currdraw->inum = dci.indexcount;
     totalbuffersize += (dci.indexcount * currdraw->isize);
 
     /* VIEW AND SCISSOR */
@@ -1660,7 +1924,8 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
 
     /* RESOURCES */
 
-    VkDescriptorSetLayoutBinding dslayoutbinding[dci.resourceinfocount];
+    VkDescriptorSetLayoutBinding dslayoutbinding[dci.resourceinfocount]; 
+
     uint32_t uniformc = 0, imagec = 0, samplerc = 0;
     /* TODO: dont assume all resources are set 0 */
     for (uint32_t r = 0; r < dci.resourceinfocount; ++r){
@@ -1696,6 +1961,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         switch (dci.resourceinfos[r].stage){
         case DRSE_vertex: dslayoutbinding[r].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; break;
         case DRSE_fragment: dslayoutbinding[r].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; break;
+        default: break;
         }
     }
 
@@ -1711,7 +1977,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         ExitOnError("Couldn't create descriptor set layout! (geeb)");
     }
 
-    VkDescriptorPoolSize poolsizes[] = {
+    VkDescriptorPoolSize poolsizes[2] = {
         {
             .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = uniformc
@@ -1721,6 +1987,11 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             .descriptorCount = samplerc
         }
     };
+
+
+    bool nouniform = uniformc == 0;
+    bool nosampler = samplerc == 0;
+
     VkDescriptorPoolCreateInfo dpci = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
@@ -1729,22 +2000,35 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .poolSizeCount = 2,
         .pPoolSizes = poolsizes,
     };
-    if (vkCreateDescriptorPool(gfx.device, &dpci, 0, &gfx.drawers[gfx.drawersused-1].discpool) != VK_SUCCESS){
-        ExitOnError("Couldn't create descriptor pool!");
+    if (!nouniform && !nosampler){
+        // yippeee
     }
-    VkDescriptorSetAllocateInfo sdai = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .pNext = 0,
-        .descriptorPool = currdraw->discpool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &currdraw->disclayout
-    };
-    if (vkAllocateDescriptorSets( gfx.device, &sdai, &currdraw->discset ) != VK_SUCCESS) {
-        ExitOnError("Couldn't allocate descriptor set!\n");
+    else if (!nouniform && nosampler){
+        dpci.poolSizeCount = 1;
+        // dpci.pPoolSizes = poolsizes;
+    }
+    else if (nouniform && !nosampler){
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes = poolsizes + 1;
+    }
+   
+    if (!nouniform || !nosampler){
+        if (vkCreateDescriptorPool(gfx.device, &dpci, 0, &gfx.drawers[gfx.drawersused-1].discpool) != VK_SUCCESS){
+            ExitOnError("Couldn't create descriptor pool!");
+        }
+        VkDescriptorSetAllocateInfo sdai = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .pNext = 0,
+            .descriptorPool = currdraw->discpool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &currdraw->disclayout
+        };
+        if (vkAllocateDescriptorSets( gfx.device, &sdai, &currdraw->discset ) != VK_SUCCESS) {
+            ExitOnError("Couldn't allocate descriptor set!\n");
+        }
     }
 
     /* Uniform Buffers */
-
 
     CreateBuffer(
         &currdraw->buffers,
@@ -1752,6 +2036,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
+    if (totalhcbuffersize > 0)
     CreateBuffer(
         &currdraw->hcbuffers,
         totalhcbuffersize,
@@ -1759,6 +2044,64 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     );
 
+    VkDescriptorBufferInfo descriptorbuffers[dci.resourceinfocount];
+    VkDescriptorImageInfo  descriptorsamplers[dci.resourceinfocount];
+    VkWriteDescriptorSet descriptorwrites[dci.resourceinfocount];
+    VkWriteDescriptorSet descriptorwritebase = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = 0,
+        .dstSet = currdraw->discset,
+        .dstBinding = 0, // to be changed
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = 0, // to be changed // VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = 0, // to be changed // = &samplerinfo,
+        .pBufferInfo = 0,
+        .pTexelBufferView = 0
+    };
+    const char *texturenames[ samplerc ];
+    uint32_t texturenamesfilled = 0;
+    for (uint32_t i = 0; i < dci.resourceinfocount; ++i){
+        DrawerResourceInfo resinfo = dci.resourceinfos[i];
+        descriptorwrites[i] = descriptorwritebase;
+        descriptorwrites[i].dstBinding = i;
+        switch (resinfo.type){
+        case DRTE_uniform: {
+            struct resbuf resbuf = *(struct resbuf*)BAGetPointer(currdraw->discoffsets, i );
+            descriptorbuffers[i] = (VkDescriptorBufferInfo){
+                .buffer = (resbuf.hc) ? currdraw->hcbuffers.buffer : currdraw->buffers.buffer ,
+                .offset = resbuf.offset,
+                .range = resbuf.size
+            };    
+            descriptorwrites[i].pBufferInfo = descriptorbuffers + i; 
+            descriptorwrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        } break;  
+        case DRTE_sampler: { 
+            texturenames[texturenamesfilled++] = resinfo.sampler.file;
+            descriptorwrites[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        } break;
+        default: break;
+        } 
+    }
+
+    GraphicsImagesCreate( currdraw, samplerc, texturenames );
+
+    texturenamesfilled = 0;
+    for (uint32_t i = 0; i < dci.resourceinfocount; ++i){
+        DrawerResourceInfo resinfo = dci.resourceinfos[i];
+        switch (resinfo.type){
+            case DRTE_sampler: {
+                descriptorwrites[i].pImageInfo = descriptorsamplers + i;
+                descriptorsamplers[i] = (VkDescriptorImageInfo){
+                    *(VkSampler*)BAGetPointer(currdraw->images.samplers, 0),
+                    *(VkImageView*)BAGetPointer(currdraw->images.views, texturenamesfilled++),
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                };
+            } break;
+            default: break;
+        }
+    }
+    /*
     VkDescriptorBufferInfo bufferInfo = {
         .buffer = currdraw->hcbuffers.buffer,
         .offset = 0,
@@ -1776,224 +2119,13 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .pBufferInfo = &bufferInfo,
         .pTexelBufferView = 0
     };
-    vkUpdateDescriptorSets( gfx.device, 1, &descriptorWrite, 0, 0 );
+    */
+    vkUpdateDescriptorSets( gfx.device, dci.resourceinfocount, descriptorwrites, 0, 0 );
 
-    /* Images */
-    DirectImage readimage = directimage_create_bmp("texture_map.bmp");
-    uint32_t
-        width = readimage.width,
-        height = readimage.height;
-        
-    uint32_t texsize = width * height * 4;
 
-    VkExtent3D sampleriamgeextent = {
-        width, height, 1
-    };
-    VkImageCreateInfo ici = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext = 0,
-        .flags = 0,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .extent = sampleriamgeextent,
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE, // TODO: not assume
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &gfx.graphics_i,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-    vkCreateImage( gfx.device, &ici, 0, &samplers.image);
-    VkMemoryRequirements memreq;
-    vkGetImageMemoryRequirements( gfx.device, samplers.image, &memreq);
-
-    VkMemoryAllocateInfo mai = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = 0,
-        .allocationSize = memreq.size,
-        .memoryTypeIndex = FindMemoryType(
-            memreq.memoryTypeBits,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-        )
-    };
-    vkAllocateMemory( gfx.device, &mai, 0, &samplers.memory );
-    vkBindImageMemory( gfx.device, samplers.image, samplers.memory, 0 );
-
-    VkImageViewCreateInfo ivci = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = samplers.image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .components = {
-            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-            .a = VK_COMPONENT_SWIZZLE_IDENTITY
-        },
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-    vkCreateImageView( gfx.device, &ivci, 0, &samplers.imageview );
-
-    GraphicsBuffer interbuffer;
-    CreateBuffer(
-        &interbuffer,
-        texsize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-    );
-    
-    void *texdata;
-    vkMapMemory( gfx.device, interbuffer.memory, 0, texsize, 0, &texdata );
-        memcpy(texdata, readimage.data, texsize);
-    vkUnmapMemory(gfx.device, interbuffer.memory);
-
-    VkCommandBuffer intercommand;
-    VkCommandBufferAllocateInfo cbai = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = 0,
-        .commandPool = gfx.commandpool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = 1
-    };
-    vkAllocateCommandBuffers( gfx.device, &cbai, &intercommand );
-    VkCommandBufferBeginInfo cbbi = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = 0,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-        .pInheritanceInfo = 0
-    };
-    vkBeginCommandBuffer(intercommand, &cbbi);
-
-    VkImageMemoryBarrier imbb = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext = 0,
-        .srcAccessMask = 0,
-        .dstAccessMask = 0,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED, // Ignoring anything on image
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // Not swapping queue
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, // ownership of img
-        .image = samplers.image,
-        .subresourceRange = (VkImageSubresourceRange){
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-    VkImageMemoryBarrier imba = imbb;
-    imba.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    imba.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    vkCmdPipelineBarrier(
-        intercommand,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0, 0,
-        0, 0,
-        1, &imbb
-    );
-    VkBufferImageCopy bic = {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,   // ASSUME THE EXTENT
-        .bufferImageHeight = 0, // IS THE TEXTURE SIZE
-        .imageSubresource = (VkImageSubresourceLayers){
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        },
-        .imageOffset = 0,
-        .imageExtent = (VkExtent3D){
-            .width = width,
-            .height = height,
-            .depth = 1
-        }
-    };
-    vkCmdCopyBufferToImage(
-        intercommand,
-        interbuffer.buffer,
-        samplers.image,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &bic
-    );
-
-    vkCmdPipelineBarrier(
-        intercommand,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0, 0,
-        0, 0,
-        1, &imba
-    );
-
-    vkEndCommandBuffer(intercommand);
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = 0,
-        .pWaitDstStageMask = 0,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &intercommand,
-        .signalSemaphoreCount = 0,
-        .pSignalSemaphores = 0
-    };
-    vkQueueSubmit(gfx.graphics, 1, &submitInfo, VK_NULL_HANDLE);
-
-    struct VkSamplerCreateInfo sci2 = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .pNext = 0,
-        .flags = 0,
-        .magFilter = VK_FILTER_NEAREST,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .mipLodBias = 0.0f,
-        .anisotropyEnable = VK_FALSE,
-        .maxAnisotropy = 0.0f,
-        .compareEnable = VK_FALSE,
-        .compareOp = VK_COMPARE_OP_ALWAYS,
-        .minLod = 0.0f,
-        .maxLod = 0.0f,
-        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-        .unnormalizedCoordinates = VK_FALSE
-    };
-    vkCreateSampler( gfx.device, &sci2, nullptr, &samplers.sampler );
-    
-    VkDescriptorImageInfo samplerinfo = {
-        .sampler = samplers.sampler,
-        .imageView = samplers.imageview,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    };
-    VkWriteDescriptorSet descriptorwrite = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = 0,
-        .dstSet = currdraw->discset,
-        .dstBinding = 1, // CHANGEDDD
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &samplerinfo,
-        .pBufferInfo = 0,
-        .pTexelBufferView = 0
-    };
-    // Update the descriptor set to bind the uniform buffer
-    vkUpdateDescriptorSets(gfx.device, 1, &descriptorwrite, 0, 0);
-
+    /* Images */ 
     /* Image Samplers */
+
 
     VkDescriptorSetLayout dslayouts[] = {
         gfx.drawers[gfx.drawersused-1].disclayout
@@ -2071,7 +2203,7 @@ void UpdateVertexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
     GraphicsBuffer interbuffer;
     CreateBuffer(
         &interbuffer,
-        t.vertcount * sizeof(Vertex),
+        t.vertcount * dr->vsize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
@@ -2100,9 +2232,8 @@ void UpdateVertexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
 
     VkBufferCopy cbcp = {
         0, dr->voffset + offset,
-        t.vertcount * sizeof(Vertex),
+        t.vertcount * dr->vsize,
     };
-    printf("aaaaa%d\n",offset);
     vkCmdCopyBuffer(
         intercommand, 
         interbuffer.buffer, dr->buffers.buffer,
@@ -2163,12 +2294,12 @@ void UpdateIndexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
         0, dr->ioffset + offset,
         t.indcount * sizeof(uint32_t),
     };
+    printf("okayyeah %d\n", dr->ioffset);
     vkCmdCopyBuffer(
         intercommand, 
         interbuffer.buffer, dr->buffers.buffer,
         1, &cbcp
     );
-    printf("bbbbb %d, %d\n",dr->ioffset,offset);
 
     vkEndCommandBuffer(intercommand);
 
@@ -2197,39 +2328,58 @@ Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t 
         vkMapMemory( gfx.device, dr->hcbuffers.memory, resbufptr->offset, resbufptr->size, 0, &mappeddata);
         void *mapto = mappeddata + offset;
         memcpy(mapto, data, size);
+
+        vkDeviceWaitIdle( gfx.device );
         vkUnmapMemory(gfx.device, dr->hcbuffers.memory);
     }
-        
+    
     return 0;
 }
 
 Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
-    bufman.memupdated = true;
-    MeshMemory *vmem = &bufman.vtxmem;
+    if (rdi.mesh.vertsize != drawer->vsize){
+        return 0;
+    }
+    printf("fuckaye\n");
+    drawer->db.memupdated = true;
+    MeshMemory *vmem = &drawer->db.vtxmem;
     bool foundslot = false;
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
-    
-    for (uint32_t i = 0; i < rdi.mesh.vertcount; ++i){
-        rdi.mesh.vertdata[i].pos = Vector3Transform(
-            rdi.mesh.vertdata[i].pos, rdi.transform
-        );
+   
+    /*
+    if (!MatrixIsZero(rdi.transform)){
+        for (uint32_t i = 0; i < rdi.mesh.vertcount; ++i){
+            void *vertptr = rdi.mesh.vertdata + (i * rdi.mesh.vertsize);
+            if (rdi.mesh.isflat){
+                *(Vector2*)vertptr = Vector2Transform(
+                    *(Vector2*)vertptr, rdi.transform
+                );
+            }
+            else{
+                *(Vector3*)vertptr = Vector3Transform(
+                    *(Vector3*)vertptr, rdi.transform
+                );
+            }
+        }
     }
+    */
     
-    dr->ref = ECS_AddEntity( bufman.refs );
+    dr->ref = ECS_AddEntity( drawer->db.refs );
     if (dr->ref == UINT32_MAX){
         printf("Ran out of drawable references.....\n");
         exit(-1);
     }
-    ECS_AddComp( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "t" ), 0 );
-    ECS_AddComp( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "m" ), 0 );
-    
-    *(uint32_t *)ECS_Get( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "t" ) ) = rdi.mesh.vertdata[0].trsid;
-    *(uint32_t *)ECS_Get( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "m" ) ) = rdi.mesh.vertdata[0].matid;
-    
+    ECS_AddComp( drawer->db.refs, dr->ref, 0, 0 );
+    ECS_AddComp( drawer->db.refs, dr->ref, 1, 0 );
+   
+    void *vertptr = rdi.mesh.vertdata;
+    *(uint32_t *)ECS_Get( drawer->db.refs, dr->ref, 0 ) = *(uint32_t*)(vertptr + rdi.mesh.trspos);
+    *(uint32_t *)ECS_Get( drawer->db.refs, dr->ref, 1 ) = *(uint32_t*)(vertptr + rdi.mesh.matpos);
+   
     while (!foundslot){
         if (vmem->next == 0){
-            if (vmem->end + (rdi.mesh.vertcount * sizeof(Vertex)) > bufman.vtx.sizeofdata){
+            if (vmem->end + (rdi.mesh.vertcount * drawer->vsize) > drawer->ioffset){
                 printf("RAN OUT OF DATA RAAAAH\n");
                 exit(-1);
             }
@@ -2237,7 +2387,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             voffset = vmem->end+1;
             vmem->next = malloc( sizeof(MeshMemory) );
             *vmem->next = (MeshMemory){
-                voffset, voffset + (rdi.mesh.vertcount * sizeof(Vertex)-1),
+                voffset, voffset + (rdi.mesh.vertcount * drawer->vsize-1),
                 malloc(sizeof(uint32_t) * rdi.mesh.indcount), rdi.mesh.indcount,
                 vmem, 0, 
                 true, dr->ref
@@ -2251,6 +2401,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
         }
     }
     UpdateVertexBuffer( drawer, rdi.mesh, voffset );
+    UpdateIndexBuffer( drawer, rdi.mesh, 0 );
 
     free( rdi.mesh.vertdata );
     free( rdi.mesh.inddata );
@@ -2259,13 +2410,13 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     return dr;
 }
 Return_t DrawableSetVisability( Drawable dr, bool vis ){
-    if (!ECS_Exists( bufman.refs, dr->ref )){
+    if (!ECS_Exists( dr->drawer->db.refs, dr->ref )){
         return "Attempted to modify a non-existant drawable";
     }
-    bufman.memupdated = true;
-    MeshMemory *mem = bufman.vtxmem.next;
+    dr->drawer->db.memupdated = true;
+    MeshMemory *mem = dr->drawer->db.vtxmem.next;
     while (mem){
-        if (mem->dr.ref == dr->ref){
+        if (mem->ref == dr->ref){
             mem->visable = vis;
         }
         mem = mem->next;
@@ -2273,21 +2424,21 @@ Return_t DrawableSetVisability( Drawable dr, bool vis ){
     return 0;
 }
 Return_t DrawableSetTransform( Drawable dr, Matrix m ){
-    if (!ECS_Exists( bufman.refs, dr->ref )){
+    if (!ECS_Exists( dr->drawer->db.refs, dr->ref )){
         return "Attempted to modify a non-existant drawable";
     }
 
     // Every drawable reference has a trsid and matid
     // TODO: Implement ECS variant where all entities have component enabled by default
 
-    uint32_t trsid = *(uint32_t *)ECS_Get( bufman.refs, dr->ref, ECS_GetComp( bufman.refs, "t" ) );
+    uint32_t trsid = *(uint32_t *)ECS_Get( dr->drawer->db.refs, dr->ref, 0 );
 
-    return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), trsid * sizeof(Matrix) );
+    return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), 0); //trsid * sizeof(Matrix) );
 }
 
 
 void RegenerateIndicies( Drawer drawer ){
-    MeshMemory *mem = &bufman.vtxmem;
+    MeshMemory *mem = &drawer->db.vtxmem;
     uint32_t buffer[1024];
     uint32_t intobuffer = 0;
     uint32_t updatedinds = 0;
@@ -2296,7 +2447,7 @@ void RegenerateIndicies( Drawer drawer ){
             mem = mem->next;
             continue;
         }
-        uint32_t vert = mem->start / sizeof(Vertex);
+        uint32_t vert = mem->start / drawer->vsize;
         for (uint32_t i = 0; i < mem->indcount; ++i){
             if (intobuffer == 1024){
                 MeshResource_t m = {
@@ -2359,9 +2510,10 @@ void EndRenderPass( ){
 }
 
 void WindowDraw( Drawer drawer, Drawable drawable ){
-    if (bufman.memupdated){
-        bufman.memupdated = false;
-        RegenerateIndicies( drawer );
+    if (drawer->db.memupdated){
+        printf("updating inds\n");
+        drawer->db.memupdated = false;
+        // RegenerateIndicies( drawer );
     }
 
     vkWaitForFences( gfx.device, 1, &gfx.feninflight, VK_TRUE, UINT64_MAX );
@@ -2372,7 +2524,7 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
     vkAcquireNextImageKHR( gfx.device, gfx.swapchain, UINT64_MAX, gfx.semimagegrabbed, VK_NULL_HANDLE, &imageindex );
 
     if (r != 0){
-        printf("Failure grabbing image... fuck %d\n", r);
+        printf("Failure grabbing image %d\n", r);
         ExitOnError("Exiting...");
     }
 
@@ -2380,9 +2532,9 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
     vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, drawer->pipeline );
 
     VkBuffer buffers[] = { drawer->buffers.buffer };
-    VkDeviceSize offsets[] = { drawer->voffset };
-    // TODO: fuuuuuck no okay i need seperate buffers for the mf
-    vkCmdBindVertexBuffers(gfx.drawcommand, 0, 1, buffers, offsets);
+    VkDeviceSize offsets[] = { 0 };
+
+    vkCmdBindVertexBuffers(gfx.drawcommand, 0, 1, buffers, offsets );
 
     vkCmdBindIndexBuffer( gfx.drawcommand, drawer->buffers.buffer, drawer->ioffset, VK_INDEX_TYPE_UINT32 );
 
@@ -2414,7 +2566,8 @@ void WindowDraw( Drawer drawer, Drawable drawable ){
         MatrixPerspective(gfx.cam.fov, gfx.cam.aspect, near, far)
     );
     vkCmdPushConstants( gfx.drawcommand, drawer->pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &m);
-    vkCmdDrawIndexed( gfx.drawcommand, 12, 1, 0, 0, 0 );
+    vkDeviceWaitIdle( gfx.device );
+    vkCmdDrawIndexed( gfx.drawcommand, 6, 1, 0, 0, 0 );
 
     "eva is so beautiful <3";
 
@@ -2545,24 +2698,53 @@ void ui_draw( UiComponent comp ){
 
 }
 
-MeshResource_t Mesh_CreateQuad( Matrix m, Box2D tex, uint32_t trsid, uint32_t matid ){
+MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D tex, MeshCreateInfo mci ){
     MeshResource_t ret;
+    ret.vertsize = mci.vertsize;
 
-    ret.vertdata = malloc(sizeof(Vertex) * 4);
-    ret.vertdata[0] = (Vertex){{-0.5, -0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 0), trsid, matid}; // TL
-    ret.vertdata[1] = (Vertex){{ 0.5, -0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 1), trsid, matid}; // TR
-    ret.vertdata[2] = (Vertex){{-0.5,  0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 2), trsid, matid}; // BL
-    ret.vertdata[3] = (Vertex){{ 0.5,  0.5, 0.}, {0., 0., 0.}, Box2DGetCorner(tex, 3), trsid, matid}; // BR
-    ret.vertcount = 4;
+    uint32_t ncol = xdiv + 1, nrow = ydiv + 1;
+    uint32_t nx = ncol+1, ny = nrow+1;
+    ret.vertcount = nx * ny;
+    ret.vertdata = malloc(mci.vertsize * ret.vertcount);
+    ret.indcount = ncol * nrow * 6;
+    ret.inddata = malloc(sizeof(uint32_t) * ret.indcount);
 
-    ret.inddata = malloc(sizeof(uint32_t) * 6);
-    ret.inddata[0] = 0;
-    ret.inddata[1] = 1;
-    ret.inddata[2] = 2;
-    ret.inddata[3] = 1;
-    ret.inddata[4] = 3;
-    ret.inddata[5] = 2;
-    ret.indcount = 6;
+    ret.trspos = sizeof(Vector3)*2 + sizeof(Vector2);
+    ret.matpos = ret.trspos + sizeof(uint32_t);
+
+    for (uint32_t y = 0; y < ny; ++y){
+        for (uint32_t x = 0; x < nx; ++x){
+            float xval = x / (float)ncol;
+            float yval = y / (float)nrow;
+            Vertex v = {
+                {xval, yval, 0},
+                {0, 0, 0},
+                {xval, yval},
+                ((uint32_t*)mci.data)[0],
+                ((uint32_t*)mci.data)[1]
+            };
+            *(Vertex*)(ret.vertdata + (((nx * y) + x) * mci.vertsize)) = v;
+        }
+    }
+
+    for (uint32_t y = 0; y < ncol; ++y){
+        for (uint32_t x = 0; x < nrow; ++x){
+            uint32_t i = (nx * y) + x;
+            uint32_t
+                tl = (nx * y) + x,
+                tr = (nx * y) + x + 1,
+                bl = (nx * (y+1)) + x,
+                br = (nx * (y+1)) + x + 1
+            ;
+            ret.inddata[0 + (i * 6)] = tl;
+            ret.inddata[1 + (i * 6)] = br;
+            ret.inddata[2 + (i * 6)] = bl;
+        
+            ret.inddata[3 + (i * 6)] = tl;
+            ret.inddata[4 + (i * 6)] = tr;
+            ret.inddata[5 + (i * 6)] = br;           
+        }
+    } 
 
     return ret;
 }

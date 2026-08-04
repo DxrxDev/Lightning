@@ -9,8 +9,6 @@
 #include "logic.h"
 #include "geometry.h"
 
-// typedef struct VkSurfaceKHR_T *VkSurfaceKHR;
-
 /* WINDOW BASE STUFF */
 
 enum WindowEventType {
@@ -99,11 +97,13 @@ typedef struct Vertex{
     Vector2 tex;
 
     uint32_t trsid;
-    uint32_t  matid;
+    uint32_t matid;
 } Vertex;
 typedef struct MeshResource_t {
-    Vertex   *vertdata; uint32_t vertcount;
+    void     *vertdata; uint32_t vertcount;
     uint32_t *inddata;  uint32_t indcount;
+    uint32_t  vertsize; bool isflat;
+    uint32_t trspos, matpos;
 } MeshResource_t;
 typedef struct DrawableCreateInfo{
     MeshResource_t mesh; bool discard;
@@ -240,6 +240,15 @@ UiConfigs ui_get_configs( UiComponent comp );
 void ui_generate( UiComponent comp );
 void ui_draw( UiComponent comp );
 
+typedef void (*MeshCreateFunc)(void *data);
+typedef struct MeshCreateInfo{
+    MeshCreateFunc func;
+    void *data;
+    uint32_t vertsize;
+} MeshCreateInfo;
+
 MeshResource_t Mesh_CreateQuad( Matrix m, Box2D tex, uint32_t trsid, uint32_t matid );
+
+MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D tex, MeshCreateInfo mci );
 
 #endif

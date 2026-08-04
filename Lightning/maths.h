@@ -1631,6 +1631,24 @@ RMAPI Matrix MatrixIdentity(void)
     return result;
 }
 
+// Get zero matrix
+RMAPI Matrix MatrixZero(void)
+{
+    Matrix result = { 0.0f, 0.0f, 0.0f, 0.0f,
+                      0.0f, 0.0f, 0.0f, 0.0f,
+                      0.0f, 0.0f, 0.0f, 0.0f,
+                      0.0f, 0.0f, 0.0f, 0.0f };
+    return result;
+}
+
+RMAPI int MatrixIsZero(Matrix mat)
+{
+    return (mat.m0 + mat.m1 + mat.m2 + mat.m3 +
+           mat.m4 + mat.m5 + mat.m6 + mat.m7 +
+           mat.m8 + mat.m9 + mat.m10 + mat.m11 +
+           mat.m12 + mat.m13 + mat.m14 + mat.m15) == 0.0f;
+}
+
 // Add two matrices
 RMAPI Matrix MatrixAdd(Matrix left, Matrix right)
 {

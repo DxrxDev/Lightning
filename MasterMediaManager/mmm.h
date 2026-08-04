@@ -28,6 +28,7 @@ typedef struct DirectImage {
 
 /* direct images */
 [[__nodiscard__]] DirectImage directimage_create_bmp(const char *file);
+[[__nodiscard__]] DirectImage directimage_dimentions_bmp(const char *file);
 void                          directimage_destroy(DirectImage *di);
 
 
@@ -90,6 +91,43 @@ DirectImage directimage_create_bmp(const char *file){
         ret.data[i] = (Colour){cpy.b, cpy.g, cpy.r, cpy.a};
     }
 
+    return ret;
+}
+DirectImage directimage_dimentions_bmp(const char *file){
+    DirectImage ret;
+    size_t filesize;
+    void  *filedata;
+
+    {
+        FILE *fileread = fopen(file, "rb");
+
+        fseek(fileread, 0, SEEK_END);
+        filesize = ftell(fileread);
+        fseek(fileread, 0, SEEK_SET);
+
+        filedata = malloc(sizeof(char) * filesize);
+        fread(filedata, 1, filesize, fileread);
+        fclose(fileread);
+    }
+
+    uint32_t offset = *(uint32_t*)(filedata + 10);
+
+    uint32_t sizeofDIB = *(uint32_t*)(filedata+14);
+
+    if (sizeofDIB != 56){
+        return (DirectImage){
+            0, 0, 0
+        };
+    }
+
+    /* THIS CODE ASSUMES THE BMP HAS HEADER BITMAPV3INFOHEADER WITH:
+        - A B8-G8-R8-A8 PIXEL FORMAT
+        - WITH NO ENCRYPTION 
+        - PIXELS SOTRED LEFT-RIGHT, BOTTOM-TOP
+    */
+
+    ret.width = *(int32_t*)(filedata+18);
+    ret.height = *(int32_t*)(filedata+22);   
     return ret;
 }
 void directimage_destroy(DirectImage *di){
