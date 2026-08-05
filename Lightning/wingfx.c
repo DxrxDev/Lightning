@@ -2059,10 +2059,8 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     void *tosend;
     if (rdi.discard){
         tosend = rdi.mesh.vertdata;
-        printf("tobedisc\n");
     }
     else {
-        printf("toNOTbedisc\n");
         tosend = malloc(rdi.mesh.vertcount * drawer->vsize);
         memcpy( tosend, rdi.mesh.vertdata, rdi.mesh.vertcount * drawer->vsize );
     }
@@ -2113,7 +2111,6 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             };
             memcpy(vmem->next->inds, rdi.mesh.inddata, sizeof(uint32_t) * rdi.mesh.indcount);
             foundslot = true;
-            printf("%u <> %u\n", vmem->next->start, vmem->next->end);
         }
         else {
             vmem = vmem->next;
@@ -2122,7 +2119,6 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     MeshResource_t m = rdi.mesh;
     m.vertdata = tosend;
     UpdateVertexBuffer( drawer, m, voffset );
-    printf("vertex offset = %d\n", voffset);
 
     if (rdi.discard){
         free( rdi.mesh.vertdata );
@@ -2182,7 +2178,6 @@ uint32_t RegenerateIndicies( Drawer drawer ){
                 intobuffer = 0;
             }
             buffer[intobuffer] = mem->inds[i] + vert;
-            printf("gaga aaaa %d\n", buffer[intobuffer]);
             intobuffer++;
         }
         mem = mem->next;
@@ -2391,14 +2386,14 @@ MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D 
         for (uint32_t x = 0; x < nx; ++x){
             float xval = x / (float)ncol;
             float yval = y / (float)nrow;
-            Vertex v = {
-                {xval, yval, 0},
-                {0, 0, 0},
-                {xval, yval},
-                ((uint32_t*)mci.data)[0],
-                ((uint32_t*)mci.data)[1]
-            };
-            *(Vertex*)(ret.vertdata + (((nx * y) + x) * mci.vertsize)) = v;
+
+            MeshFillData mfd;
+            mfd.toptr = ret.vertdata + (((nx * y) + x) * mci.vertsize);
+            mfd.exdata = mci.data;
+            mfd.grid.x = xval;
+            mfd.grid.y = yval;
+            mci.func( mfd );
+            //*(Vertex*)(ret.vertdata + (((nx * y) + x) * mci.vertsize)) = v;
         }
     }
 

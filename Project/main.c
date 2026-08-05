@@ -16,6 +16,17 @@ typedef struct {
     Vector4 col;
 } Vert2D;
 
+void GridFill( MeshFillData data ){
+    Vertex v = {
+        {data.grid.x, data.grid.y, 0},
+        {0, 0, 0},
+        {data.grid.x, data.grid.y},
+        ((uint32_t*)data.exdata)[0],
+        ((uint32_t*)data.exdata)[1]
+    };
+    *(Vertex*)data.toptr = v;
+}
+
 int main(){
     InitWindow( 1280, 720, "HIYA", 0 );
 
@@ -117,7 +128,7 @@ int main(){
     uint32_t trsmat[2] = {0, 0};
 
     MeshCreateInfo mci = {
-        0, trsmat,sizeof(Vertex)
+        GridFill, trsmat, sizeof(Vertex)
     };
     DrawableCreateInfo mapregister = {
         MeshCreateGrid( 0, 0, 1.0f, b, mci ),
@@ -132,9 +143,9 @@ int main(){
 
 
     Vert2D testdata[] = {
-        {{-1,  1}, {0,0}, {0,0,0,0}},
-        {{-1, -1}, {0,0}, {0,0,0,0}},
-        {{ 1,  1}, {0,0}, {0,0,0,0}},
+        {{-0.1,  0.1}, {0,0}, {0,0,0,0}},
+        {{-0.1, -0.1}, {0,0}, {0,0,0,0}},
+        {{ 0.1,  0.1}, {0,0}, {0,0,0,0}},
     };
     uint32_t testdata2[] = {0, 1, 2};
     MeshResource_t testmesh = {

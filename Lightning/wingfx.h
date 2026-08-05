@@ -117,9 +117,6 @@ Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t 
 Return_t DrawableSetVisability( Drawable dr, bool vis );
 Return_t DrawableSetTransform( Drawable dr, Matrix m );
 
-// void UpdateVertexBuffer( MeshResource_t t, uint32_t offset );
-// void UpdateIndexBuffer( MeshResource_t t, uint32_t offset );
-
 /*
 DRAWER STRUCT
 -------------
@@ -202,7 +199,16 @@ CameraInfo camera_get_main_camera( );
 Vector3 camera_get_forward_XZ( CameraInfo cam );
 Vector3 camera_get_forward_XYZ( CameraInfo cam );
 
-typedef void (*MeshCreateFunc)(void *data);
+typedef struct MeshFillData {
+    void *exdata;
+    void *toptr;
+    union {
+        struct {
+            float x, y;
+        } grid;
+    };
+} MeshFillData;
+typedef void (*MeshCreateFunc)(MeshFillData data);
 typedef struct MeshCreateInfo{
     MeshCreateFunc func;
     void *data;
