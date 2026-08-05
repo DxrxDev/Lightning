@@ -1,3 +1,8 @@
 # Aknowlagments
 
 The math library is based on raylib's raymath <https://github.com/raysan5/raylib>
+
+# Known Issues
+
+- Maximum 2 Drawers
+- Unable to delete Drawables

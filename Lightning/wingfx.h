@@ -78,6 +78,7 @@ nodisc bool AppRunning( );
 bool window_key_down(char c);
 
 Vector2 window_centre( void );
+Vector2 WindowDimensions( void );
 
 /* GRAPHICS */
 

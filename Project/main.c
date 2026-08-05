@@ -123,7 +123,10 @@ int main(){
         MeshCreateGrid( 0, 0, 1.0f, b, mci ),
         false, MatrixRotateX(3.14159 / 2.0)
     };
-    Drawable mapdrawable = CreateDrawable( worlddrawer, mapregister );
+    Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
+    mapregister.discard = true;
+    mapregister.transform = MatrixZero();
+    Drawable mapdrawable2 = CreateDrawable( worlddrawer, mapregister );
 
     ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() ));
 
@@ -145,7 +148,8 @@ int main(){
         MatrixZero()
     };
     Drawable testdrawable = CreateDrawable( uidrawer, testreg );
-    printf("geep %p\n", testdrawable);
+    
+
 
     CameraInfo ci = {
         (Vector3){0, -1, 1},

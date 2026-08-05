@@ -340,6 +340,9 @@ bool window_key_down(char c){
 Vector2 window_centre( void ){
     return (Vector2){wfx.width, wfx.height};
 }
+Vector2 WindowDimensions( void ){
+    return (Vector2){wfx.width, wfx.height};
+}
 
 typedef struct GraphicsBuffer{
     VkBuffer buffer;
@@ -390,6 +393,7 @@ typedef struct DrawerDef {
     BA discoffsets;
 
     DrawableBank db;
+    uint32_t indcount;
 
     bool is2d;
 } DrawerDef;
@@ -440,21 +444,6 @@ static struct Graphics_instance{
     CameraInfo cam;
 } gfx;
 
-/*
-struct {
-    GraphicsBuffer vtx, ind;
-    MeshMemory vtxmem; bool memupdated;
-    ECS_t refs, transforms;
-} bufman;
-
-struct {
-    VkImage image;
-    VkImageView imageview;
-    VkSampler sampler;
-    VkDeviceMemory memory;
-} samplers;
-*/
-
 Return_t CreateInstance();
 Return_t CreateDevice();
 Return_t CreateSwapchain();
@@ -464,10 +453,6 @@ Return_t CreateCommands();
 Return_t CreateSyncVars();
 Return_t CreateBuffers();
 Return_t CreateImageSamplers();
-
-Return_t CreateUiLayouts();
-Return_t CreateUiPipeline();
-Return_t CreateUiBuffers();
 
 void UpdateVertexBuffer( Drawer drawer, MeshResource_t t, uint32_t offset );
 void UpdateIndexBuffer( Drawer drawer, MeshResource_t t, uint32_t offset );
@@ -2070,10 +2055,21 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     bool foundslot = false;
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
-   
+  
+    void *tosend;
+    if (rdi.discard){
+        tosend = rdi.mesh.vertdata;
+        printf("tobedisc\n");
+    }
+    else {
+        printf("toNOTbedisc\n");
+        tosend = malloc(rdi.mesh.vertcount * drawer->vsize);
+        memcpy( tosend, rdi.mesh.vertdata, rdi.mesh.vertcount * drawer->vsize );
+    }
+
     if (!MatrixIsZero(rdi.transform)){
         for (uint32_t i = 0; i < rdi.mesh.vertcount; ++i){
-            void *vertptr = rdi.mesh.vertdata + (i * rdi.mesh.vertsize);
+            void *vertptr = tosend + (i * rdi.mesh.vertsize);
             if (drawer->is2d){
                 *(Vector2*)vertptr = Vector2Transform(
                     *(Vector2*)vertptr, rdi.transform
@@ -2117,14 +2113,16 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             };
             memcpy(vmem->next->inds, rdi.mesh.inddata, sizeof(uint32_t) * rdi.mesh.indcount);
             foundslot = true;
-            // printf("%u <> %u\n", vmem->next->start, vmem->next->end);
+            printf("%u <> %u\n", vmem->next->start, vmem->next->end);
         }
         else {
             vmem = vmem->next;
         }
     }
-    UpdateVertexBuffer( drawer, rdi.mesh, voffset );
-    UpdateIndexBuffer( drawer, rdi.mesh, 0 );
+    MeshResource_t m = rdi.mesh;
+    m.vertdata = tosend;
+    UpdateVertexBuffer( drawer, m, voffset );
+    printf("vertex offset = %d\n", voffset);
 
     if (rdi.discard){
         free( rdi.mesh.vertdata );
@@ -2162,7 +2160,7 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
 }
 
 
-void RegenerateIndicies( Drawer drawer ){
+uint32_t RegenerateIndicies( Drawer drawer ){
     MeshMemory *mem = &drawer->db.vtxmem;
     uint32_t buffer[1024];
     uint32_t intobuffer = 0;
@@ -2184,6 +2182,7 @@ void RegenerateIndicies( Drawer drawer ){
                 intobuffer = 0;
             }
             buffer[intobuffer] = mem->inds[i] + vert;
+            printf("gaga aaaa %d\n", buffer[intobuffer]);
             intobuffer++;
         }
         mem = mem->next;
@@ -2193,6 +2192,9 @@ void RegenerateIndicies( Drawer drawer ){
         buffer, intobuffer
     };
     UpdateIndexBuffer( drawer, m, updatedinds );
+
+    drawer->indcount = updatedinds + intobuffer;
+    printf( "Regenerated drawer (%p) with %d indicies.\n", drawer, drawer->indcount );
 }
 
 void StartRenderPass(uint32_t image){
@@ -2260,7 +2262,7 @@ void WindowDraw( Drawer drawer ){
     if (drawer->db.memupdated){
         printf("updating inds\n");
         drawer->db.memupdated = false;
-        // RegenerateIndicies( drawer );
+        RegenerateIndicies( drawer );
     } 
     vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, drawer->pipeline );
 
@@ -2300,7 +2302,7 @@ void WindowDraw( Drawer drawer ){
     );
     vkCmdPushConstants( gfx.drawcommand, drawer->pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &m);
     vkDeviceWaitIdle( gfx.device );
-    vkCmdDrawIndexed( gfx.drawcommand, 6, 1, 0, 0, 0 );
+    vkCmdDrawIndexed( gfx.drawcommand, drawer->indcount, 1, 0, 0, 0 );
 
     "eva is so beautiful <3";
 }
