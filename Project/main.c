@@ -161,12 +161,18 @@ int main(){
 
     DrawableCreateInfo mapregister = {
         MeshCreateGrid( 30, 30, 1.0f, b, mci ),
-        true, MatrixZero()//MatrixRotateX(3.14159 / 2.0)
+        true, MatrixZero()
     };
     ApplyHeightMap( &mapregister.mesh );
     Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
 
-    ExitOnError(DrawableSetTransform( mapdrawable, MatrixTranslate(0 , 0, 0) ));
+    ExitOnError(DrawableSetTransform(
+        mapdrawable,
+        MatrixMultiply(
+            MatrixRotateX(3.14159 / 2.0),
+            MatrixTranslate( 0, 1, 0 )
+        )
+    ));
 
 
     Vert2D testdata[] = {
@@ -271,7 +277,7 @@ int main(){
 
         ClearWindowEvents(events);
     
-        ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() )); //MatrixTranslate(0, balls, 0) ));
+        // ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() )); //MatrixTranslate(0, balls, 0) ));
 
         WindowStartDrawing();
 
