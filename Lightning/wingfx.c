@@ -87,12 +87,15 @@ void InitWindow( uint32_t width, uint32_t height, const char *title, enum Window
     );
 
     if (!(flag & WCF_Resizable)){
+        printf("WINDOW NOT RESIZABLE\n");
         xcb_size_hints_t hints;
         xcb_icccm_size_hints_set_min_size(&hints, width, height);
         xcb_icccm_size_hints_set_max_size(&hints, width, height);
         xcb_icccm_size_hints_set_size(&hints, 1, width, height);
 
         xcb_icccm_set_wm_size_hints(wfx.conn, wfx.window, XCB_ATOM_WM_NORMAL_HINTS, &hints);
+    }else{
+        printf("WINDOW RESIZABLE\n");
     }
 
     xcb_intern_atom_reply_t *deletereply = xcb_intern_atom_reply(
@@ -133,6 +136,9 @@ void InitWindow( uint32_t width, uint32_t height, const char *title, enum Window
     wfx.symbols = xcb_key_symbols_alloc(wfx.conn);
 
     wfx.running = true;
+
+    uint32_t vals[] = {wfx.width, wfx.height};
+    xcb_configure_window( wfx.conn, wfx.window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals );
 
     ExitOnError(InitGraphics( ));
 }
@@ -309,9 +315,16 @@ nodisc WindowEvent *GetWindowEvents( void ){
                     }},
                     0
                 };
-                wfx.width = e.width;
-                wfx.height = e.height;
+                //wfx.width = e.width;
+                //wfx.height = e.height;
             } break;
+            case XCB_EXPOSE: {
+                xcb_expose_event_t e = *(xcb_expose_event_t*)event;
+                printf("WINDOW EXPOSE EVENT { %d, %d }\n", e.width, e.height);
+                uint32_t vals[] = {wfx.width, wfx.height};
+                xcb_configure_window( wfx.conn, wfx.window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals );
+            } break;
+            case 0: break;
             default: {
                 printf("Unhandled Window Event: %d\n", (event->response_type & ~0x80));
             } break;
@@ -2001,10 +2014,9 @@ void UpdateIndexBuffer( Drawer dr, MeshResource_t t, uint32_t offset ){
     vkBeginCommandBuffer(intercommand, &cbbi);
 
     VkBufferCopy cbcp = {
-        0, dr->ioffset + offset,
+        0, dr->ioffset + (offset * sizeof(uint32_t)),
         t.indcount * sizeof(uint32_t),
     };
-    printf("okayyeah %d\n", dr->ioffset);
     vkCmdCopyBuffer(
         intercommand, 
         interbuffer.buffer, dr->buffers.buffer,
@@ -2056,6 +2068,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
   
+
     void *tosend;
     if (rdi.discard){
         tosend = rdi.mesh.vertdata;
@@ -2064,6 +2077,8 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
         tosend = malloc(rdi.mesh.vertcount * drawer->vsize);
         memcpy( tosend, rdi.mesh.vertdata, rdi.mesh.vertcount * drawer->vsize );
     }
+
+
 
     if (!MatrixIsZero(rdi.transform)){
         for (uint32_t i = 0; i < rdi.mesh.vertcount; ++i){
@@ -2080,7 +2095,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             }
         }
     }
-    
+   
     
     dr->ref = ECS_AddEntity( drawer->db.refs );
     if (dr->ref == UINT32_MAX){
@@ -2155,10 +2170,11 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
     return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), 0); //trsid * sizeof(Matrix) );
 }
 
-
 uint32_t RegenerateIndicies( Drawer drawer ){
     MeshMemory *mem = &drawer->db.vtxmem;
-    uint32_t buffer[1024];
+    uint32_t bsize = 1024;
+
+    uint32_t buffer[bsize];
     uint32_t intobuffer = 0;
     uint32_t updatedinds = 0;
     while (mem){
@@ -2168,13 +2184,13 @@ uint32_t RegenerateIndicies( Drawer drawer ){
         }
         uint32_t vert = mem->start / drawer->vsize;
         for (uint32_t i = 0; i < mem->indcount; ++i){
-            if (intobuffer == 1024){
+            if (intobuffer == bsize){
                 MeshResource_t m = {
                     0, 0,
-                    buffer, 1024
+                    buffer, bsize
                 };
                 UpdateIndexBuffer( drawer, m, updatedinds );
-                updatedinds += 1024;
+                updatedinds += bsize;
                 intobuffer = 0;
             }
             buffer[intobuffer] = mem->inds[i] + vert;
@@ -2376,6 +2392,7 @@ MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D 
     uint32_t nx = ncol+1, ny = nrow+1;
     ret.vertcount = nx * ny;
     ret.vertdata = malloc(mci.vertsize * ret.vertcount);
+
     ret.indcount = ncol * nrow * 6;
     ret.inddata = malloc(sizeof(uint32_t) * ret.indcount);
 
@@ -2393,13 +2410,12 @@ MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D 
             mfd.grid.x = xval;
             mfd.grid.y = yval;
             mci.func( mfd );
-            //*(Vertex*)(ret.vertdata + (((nx * y) + x) * mci.vertsize)) = v;
         }
     }
 
     for (uint32_t y = 0; y < ncol; ++y){
         for (uint32_t x = 0; x < nrow; ++x){
-            uint32_t i = (nx * y) + x;
+            uint32_t i = (nrow * y) + x;
             uint32_t
                 tl = (nx * y) + x,
                 tr = (nx * y) + x + 1,

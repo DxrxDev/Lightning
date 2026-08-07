@@ -16,15 +16,38 @@ typedef struct {
     Vector4 col;
 } Vert2D;
 
+static float z = 0.0f;
 void GridFill( MeshFillData data ){
     Vertex v = {
-        {data.grid.x, data.grid.y, 0},
+        {data.grid.x - 0.5, data.grid.y - 0.5, 0},
         {0, 0, 0},
         {data.grid.x, data.grid.y},
         ((uint32_t*)data.exdata)[0],
         ((uint32_t*)data.exdata)[1]
     };
     *(Vertex*)data.toptr = v;
+    z += 0.005;
+}
+
+void GridFill2( MeshFillData data ){
+    return;
+}
+
+void ApplyHeightMap( MeshResource_t *mesh ){
+    DirectImage img = directimage_create_bmp("HeightMap.bmp");
+
+    uint32_t size = img.width * img.height;
+
+    printf("eh? %d vs %d\n", size, mesh->vertcount);
+
+    for (uint32_t i = 0; i < size; ++i){
+        Vertex *mod = mesh->vertdata;
+
+        mod[i].pos.z += (img.data[i].r / 512.0);
+
+    }
+
+    directimage_destroy( &img );
 }
 
 int main(){
@@ -50,7 +73,7 @@ int main(){
             0, 1,
             DRTE_sampler, DRSE_fragment,
             .sampler = {
-                "texture_map.bmp"
+                "HeightMap.bmp"
             }
         },
     };
@@ -65,8 +88,8 @@ int main(){
         .drawmethod = DDME_triangle,
         .transparency = true,
 
-        .vertexcount = 1000,
-        .indexcount = 100,
+        .vertexcount = 50000,
+        .indexcount = 6 * 5096,
 
         .is2d = false
     };
@@ -119,6 +142,7 @@ int main(){
     ECS_AddComp(ecs, mapent, poscomp, &mappos);
     ECS_AddComp(ecs, mapent, ECS_GetComp(ecs, "gfx"), 0);
 
+    
     Grid2D g = {
         1, 1,
         8, 8,
@@ -130,22 +154,25 @@ int main(){
     MeshCreateInfo mci = {
         GridFill, trsmat, sizeof(Vertex)
     };
-    DrawableCreateInfo mapregister = {
-        MeshCreateGrid( 0, 0, 1.0f, b, mci ),
-        false, MatrixRotateX(3.14159 / 2.0)
-    };
-    Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
-    mapregister.discard = true;
-    mapregister.transform = MatrixZero();
-    Drawable mapdrawable2 = CreateDrawable( worlddrawer, mapregister );
+   
+    //MeshResource_t mesh = MeshCreateGrid( 30, 30, 1.0f, b, mci );
+    //free(mesh.vertdata);
+    //free(mesh.inddata);
 
-    ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() ));
+    DrawableCreateInfo mapregister = {
+        MeshCreateGrid( 30, 30, 1.0f, b, mci ),
+        true, MatrixZero()//MatrixRotateX(3.14159 / 2.0)
+    };
+    ApplyHeightMap( &mapregister.mesh );
+    Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
+
+    ExitOnError(DrawableSetTransform( mapdrawable, MatrixTranslate(0 , 0, 0) ));
 
 
     Vert2D testdata[] = {
-        {{-0.1,  0.1}, {0,0}, {0,0,0,0}},
-        {{-0.1, -0.1}, {0,0}, {0,0,0,0}},
-        {{ 0.1,  0.1}, {0,0}, {0,0,0,0}},
+        {{-0.01,  0.01}, {0,0}, {0,0,0,0}},
+        {{-0.01, -0.01}, {0,0}, {0,0,0,0}},
+        {{ 0.01,  0.01}, {0,0}, {0,0,0,0}},
     };
     uint32_t testdata2[] = {0, 1, 2};
     MeshResource_t testmesh = {
@@ -159,18 +186,23 @@ int main(){
         MatrixZero()
     };
     Drawable testdrawable = CreateDrawable( uidrawer, testreg );
-    
 
 
+//    CameraInfo ci = {
+//        (Vector3){0, -1, 1},
+//        -PI/3.0, 0,
+//        3.14159 / 3.0, 1280.0 / 720.0
+//    };
     CameraInfo ci = {
-        (Vector3){0, -1, 1},
-        -PI/3.0, 0,
+        (Vector3){0, 0, 1},
+        0, 0,
         3.14159 / 3.0, 1280.0 / 720.0
     };
     camera_set_main_camera( ci );
 
+
     while (AppRunning()){
-        WindowClearScreen( );
+        //WindowClearScreen( );
         WindowEvent *events = GetWindowEvents(), *e = events;
         while (1){
             if (e->type == WET_Start){}
@@ -201,6 +233,7 @@ int main(){
             
             e = e->next;
         }
+
 
         Vector3 cammoving = camera_get_forward_XZ(ci);
 
