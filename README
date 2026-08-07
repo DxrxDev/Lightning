@@ -4,5 +4,12 @@ The math library is based on raylib's raymath <https://github.com/raysan5/raylib
 
 # Known Issues
 
-- Maximum 2 Drawers
-- Unable to delete Drawables
+E = Easy fix
+H = Time consuming
+? = Unknown cause
+! = A real pickle
+
+- Maximum 2 Drawers (E)
+- Unable to delete Drawables (H)
+- DrawableSetTransform has no effect (?)
+- Window height randomly increases (!)
