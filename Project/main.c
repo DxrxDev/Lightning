@@ -16,34 +16,41 @@ typedef struct {
     Vector4 col;
 } Vert2D;
 
-static float z = 0.0f;
+struct {
+    float  width, depth;
+    float *height;
+} WorldData;
+
 void GridFill( MeshFillData data ){
     Vertex v = {
-        {data.grid.x - 0.5, data.grid.y - 0.5, 0},
+        {(data.grid.x * 10) - 5.0, (data.grid.y * 10) - 5.0, 0},
         {0, 0, 0},
         {data.grid.x, data.grid.y},
         ((uint32_t*)data.exdata)[0],
         ((uint32_t*)data.exdata)[1]
     };
     *(Vertex*)data.toptr = v;
-    z += 0.005;
 }
 
-void GridFill2( MeshFillData data ){
-    return;
-}
+void PyrFill( MeshFillData data ){
+    Vertex v = {
+        {data.spyramid.x - 0.5, 1.0 - data.spyramid.y, data.spyramid.z - 0.5},
+        {0, 0, 0},
+        {data.spyramid.x, data.spyramid.z},
+        ((uint32_t*)data.exdata)[0],
+        ((uint32_t*)data.exdata)[1]
+    };
+    *(Vertex*)data.toptr = v;
+};
 
 void ApplyHeightMap( MeshResource_t *mesh ){
-    DirectImage img = directimage_create_bmp("HeightMap.bmp");
+    DirectImage img = directimage_create_bmp("HeightMap2.bmp");
 
     uint32_t size = img.width * img.height;
 
-    printf("eh? %d vs %d\n", size, mesh->vertcount);
-
     for (uint32_t i = 0; i < size; ++i){
         Vertex *mod = mesh->vertdata;
-
-        mod[i].pos.z += (img.data[i].r / 512.0);
+        mod[i].pos.z += (img.data[i].r / 256.0);
 
     }
 
@@ -73,7 +80,7 @@ int main(){
             0, 1,
             DRTE_sampler, DRSE_fragment,
             .sampler = {
-                "HeightMap.bmp"
+                "HeightMap2.bmp"
             }
         },
     };
@@ -89,7 +96,7 @@ int main(){
         .transparency = true,
 
         .vertexcount = 50000,
-        .indexcount = 6 * 5096,
+        .indexcount = 1000000,
 
         .is2d = false
     };
@@ -150,9 +157,13 @@ int main(){
     };
     Box2D b = Grid2DGetBox2D(g, 7, 1);
     uint32_t trsmat[2] = {0, 0};
+    uint32_t trsmad[2] = {1, 0};
 
     MeshCreateInfo mci = {
         GridFill, trsmat, sizeof(Vertex)
+    };
+    MeshCreateInfo mci2 = {
+        PyrFill, trsmad, sizeof(Vertex)
     };
    
     //MeshResource_t mesh = MeshCreateGrid( 30, 30, 1.0f, b, mci );
@@ -160,10 +171,16 @@ int main(){
     //free(mesh.inddata);
 
     DrawableCreateInfo mapregister = {
-        MeshCreateGrid( 30, 30, 1.0f, b, mci ),
+        MeshCreateGrid( 62, 62, 1.0f, b, mci ),
         true, MatrixZero()
     };
     ApplyHeightMap( &mapregister.mesh );
+
+    DrawableCreateInfo pyrreg = {
+        MeshCreateSPyramid( 1.0, b, mci2 ),
+        true, MatrixZero()
+    };
+    Drawable pyrdrawable  = CreateDrawable( worlddrawer, pyrreg );
     Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
 
     ExitOnError(DrawableSetTransform(
@@ -172,6 +189,9 @@ int main(){
             MatrixRotateX(3.14159 / 2.0),
             MatrixTranslate( 0, 1, 0 )
         )
+    ));
+    ExitOnError(DrawableSetTransform(
+        pyrdrawable, MatrixRotateY( 3.14159 )//MatrixIdentity()
     ));
 
 
@@ -276,8 +296,6 @@ int main(){
         camera_set_main_camera( ci );
 
         ClearWindowEvents(events);
-    
-        // ExitOnError(DrawableSetTransform( mapdrawable, MatrixIdentity() )); //MatrixTranslate(0, balls, 0) ));
 
         WindowStartDrawing();
 

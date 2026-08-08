@@ -206,6 +206,9 @@ typedef struct MeshFillData {
         struct {
             float x, y;
         } grid;
+        struct {
+            float x, y, z
+        } spyramid;
     };
 } MeshFillData;
 typedef void (*MeshCreateFunc)(MeshFillData data);
@@ -216,5 +219,7 @@ typedef struct MeshCreateInfo{
 } MeshCreateInfo;
 
 MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D tex, MeshCreateInfo mci );
+
+MeshResource_t MeshCreateSPyramid( float peak, Box2D tex, MeshCreateInfo mci );
 
 #endif

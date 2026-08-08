@@ -2068,7 +2068,6 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
   
-
     void *tosend;
     if (rdi.discard){
         tosend = rdi.mesh.vertdata;
@@ -2077,8 +2076,6 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
         tosend = malloc(rdi.mesh.vertcount * drawer->vsize);
         memcpy( tosend, rdi.mesh.vertdata, rdi.mesh.vertcount * drawer->vsize );
     }
-
-
 
     if (!MatrixIsZero(rdi.transform)){
         for (uint32_t i = 0; i < rdi.mesh.vertcount; ++i){
@@ -2095,7 +2092,6 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             }
         }
     }
-   
     
     dr->ref = ECS_AddEntity( drawer->db.refs );
     if (dr->ref == UINT32_MAX){
@@ -2107,8 +2103,8 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
    
     void *vertptr = rdi.mesh.vertdata;
     *(uint32_t *)ECS_Get( drawer->db.refs, dr->ref, 0 ) = *(uint32_t*)(vertptr + rdi.mesh.trspos);
-    *(uint32_t *)ECS_Get( drawer->db.refs, dr->ref, 1 ) = *(uint32_t*)(vertptr + rdi.mesh.matpos);
-   
+    *(uint32_t *)ECS_Get( drawer->db.refs, dr->ref, 1 ) = *(uint32_t*)(vertptr + rdi.mesh.matpos); 
+
     while (!foundslot){
         if (vmem->next == 0){
             if (vmem->end + (rdi.mesh.vertcount * drawer->vsize) > drawer->ioffset){
@@ -2119,7 +2115,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             voffset = vmem->end+1;
             vmem->next = malloc( sizeof(MeshMemory) );
             *vmem->next = (MeshMemory){
-                voffset, voffset + (rdi.mesh.vertcount * drawer->vsize-1),
+                voffset, voffset + (rdi.mesh.vertcount * drawer->vsize) - 1,
                 malloc(sizeof(uint32_t) * rdi.mesh.indcount), rdi.mesh.indcount,
                 vmem, 0, 
                 true, dr->ref
@@ -2167,11 +2163,12 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
 
     uint32_t trsid = *(uint32_t *)ECS_Get( dr->drawer->db.refs, dr->ref, 0 );
 
-    return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), 0); //trsid * sizeof(Matrix) );
+    return DrawerUpdateResource( dr->drawer, 0, &m, sizeof(Matrix), trsid * sizeof(Matrix) );
 }
 
 uint32_t RegenerateIndicies( Drawer drawer ){
     MeshMemory *mem = &drawer->db.vtxmem;
+    mem = mem->next;
     uint32_t bsize = 1024;
 
     uint32_t buffer[bsize];
@@ -2196,6 +2193,7 @@ uint32_t RegenerateIndicies( Drawer drawer ){
             buffer[intobuffer] = mem->inds[i] + vert;
             intobuffer++;
         }
+        printf("Jesus Crud %d\n", mem->start);
         mem = mem->next;
     }
     MeshResource_t m = {
@@ -2434,3 +2432,57 @@ MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D 
 
     return ret;
 }
+
+MeshResource_t MeshCreateSPyramid( float peak, Box2D tex, MeshCreateInfo mci ){
+    MeshResource_t ret;
+    ret.vertsize = mci.vertsize;
+
+    ret.trspos = sizeof(Vector3)*2 + sizeof(Vector2);
+    ret.matpos = ret.trspos + sizeof(uint32_t);
+    
+    ret.vertcount = 5;
+    ret.vertdata = malloc( mci.vertsize * ret.vertcount );
+
+    ret.indcount = 12;
+    ret.inddata = malloc( sizeof(uint32_t) * ret.indcount );
+
+    float xs[5] = { 0.5,  0.0, 1.0, 0.0, 1.0 };
+    float zs[5] = { 0.5,  0.0, 0.0, 1.0, 1.0 };
+    float ys[5] = { peak, 0.0, 0.0, 0.0, 0.0 };
+
+    MeshFillData mfd;
+    mfd.exdata = mci.data;
+    for (uint32_t i = 0; i < 5; ++i){
+        mfd.toptr = ret.vertdata + (i * mci.vertsize);
+        mfd.spyramid.x = xs[i];
+        mfd.spyramid.y = ys[i];
+        mfd.spyramid.z = zs[i];
+        mci.func( mfd );
+    }
+
+    ret.inddata[0] = 0;
+    ret.inddata[1] = 1;
+    ret.inddata[2] = 2;
+
+    ret.inddata[3] = 0;
+    ret.inddata[4] = 2;
+    ret.inddata[5] = 4;
+    
+    ret.inddata[6] = 0;
+    ret.inddata[7] = 4;
+    ret.inddata[8] = 3;
+    
+    ret.inddata[9] = 0;
+    ret.inddata[10] = 3;
+    ret.inddata[11] = 1;
+    
+    /*{
+        0, 1, 2,
+        0, 2, 4,
+        0, 4, 3,
+        0, 3, 1
+    }*/
+
+    return ret;
+}
+
