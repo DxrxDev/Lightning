@@ -16,9 +16,11 @@ layout (location = 4) in uint v_matid;
 
 layout (location = 0) out vec3 f_pos;
 layout (location = 1) out vec2 f_texcoords;
+layout (location = 2) out flat uint f_mat;
 
 void main(){
     gl_Position = vec4(v_pos, 1.0) * models[v_trsid] * viewproj;
     f_texcoords = v_tex;
+    f_mat = v_matid;
     // f_pos = v_pos;
 }

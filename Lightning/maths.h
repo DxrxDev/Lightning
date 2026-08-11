@@ -125,6 +125,14 @@ typedef struct Vector2 {
 #define RL_VECTOR2_TYPE
 #endif
 
+#if !defined(RL_VECTOR2I_TYPE)
+// Vector2i type
+typedef struct Vector2i{
+    int x, y;
+} Vector2i;
+#define RL_VECTOR2I_TYPE
+#endif
+
 #if !defined(RL_VECTOR3_TYPE)
 // Vector3 type
 typedef struct Vector3 {

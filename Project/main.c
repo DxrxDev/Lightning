@@ -36,7 +36,7 @@ void PyrFill( MeshFillData data ){
     Vertex v = {
         {data.spyramid.x - 0.5, 1.0 - data.spyramid.y, data.spyramid.z - 0.5},
         {0, 0, 0},
-        {data.spyramid.x, data.spyramid.z},
+        {data.spyramid.x * 0.25, data.spyramid.z * 0.25},
         ((uint32_t*)data.exdata)[0],
         ((uint32_t*)data.exdata)[1]
     };
@@ -83,12 +83,19 @@ int main(){
                 "HeightMap2.bmp"
             }
         },
+        {
+            0, 2,
+            DRTE_sampler, DRSE_fragment,
+            .sampler = {
+                "Buildings.bmp"
+            }
+        },
     };
     DrawerCreateInfo dci = {
         .vertexinfos = dvi,
         .vertexinfocount = 5,
         .resourceinfos = dri,
-        .resourceinfocount = 2,
+        .resourceinfocount = 3,
 
         .vshader = "world.vert.spirv",
         .fshader = "world.frag.spirv",
@@ -134,6 +141,8 @@ int main(){
     };
     Drawer uidrawer = DrawerCreate( dci2 );
 
+    printf("we here?\n");
+
     ComponentDefine comps[] = {
         {"pos", sizeof(Position), 0},
         {"gfx", sizeof(Drawable), 0},
@@ -157,7 +166,7 @@ int main(){
     };
     Box2D b = Grid2DGetBox2D(g, 7, 1);
     uint32_t trsmat[2] = {0, 0};
-    uint32_t trsmad[2] = {1, 0};
+    uint32_t trsmad[2] = {1, 1};
 
     MeshCreateInfo mci = {
         GridFill, trsmat, sizeof(Vertex)
@@ -165,7 +174,7 @@ int main(){
     MeshCreateInfo mci2 = {
         PyrFill, trsmad, sizeof(Vertex)
     };
-   
+
     //MeshResource_t mesh = MeshCreateGrid( 30, 30, 1.0f, b, mci );
     //free(mesh.vertdata);
     //free(mesh.inddata);
@@ -175,13 +184,13 @@ int main(){
         true, MatrixZero()
     };
     ApplyHeightMap( &mapregister.mesh );
+    Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
 
     DrawableCreateInfo pyrreg = {
         MeshCreateSPyramid( 1.0, b, mci2 ),
         true, MatrixZero()
     };
     Drawable pyrdrawable  = CreateDrawable( worlddrawer, pyrreg );
-    Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
 
     ExitOnError(DrawableSetTransform(
         mapdrawable,

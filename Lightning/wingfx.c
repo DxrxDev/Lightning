@@ -371,6 +371,7 @@ typedef struct GraphicsBuffer{
 typedef struct GraphicsImages{
     BA images, views, samplers;
     BA offsets, sizes;
+    BA dims;
     VkDeviceMemory memory;
 } GraphicsImages;
 
@@ -583,6 +584,10 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
     dr->images.images = BACreate( badefs );
     dr->images.views = BACreate( badefs );
     dr->images.samplers = BACreate( badefs );
+
+    badefs = (BADefine){ sizeof(Vector2i), num };
+    dr->images.dims = BACreate( badefs );
+
     struct VkSamplerCreateInfo newsamp = { /* implement multiple samplers later */
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .pNext = 0,
@@ -616,10 +621,14 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
         DirectImage di = directimage_dimentions_bmp(files[i]);
         uint32_t thissize = (di.width * di.height) * 4;
 
+        Vector2i dim = {di.width, di.height};
+
         *(uint32_t*)BAGetPointer(dr->images.sizes, i) = thissize;
         *(uint32_t*)BAGetPointer(dr->images.offsets, i) = totalmemoryneeded;
+        *(Vector2i*)BAGetPointer(dr->images.dims, i) = dim;
 
-        totalmemoryneeded += thissize;
+        totalmemoryneeded += 65536 * ((thissize / 65536) + 1);
+
         if (biggestimage < thissize){
             biggestimage = thissize;
         }
@@ -651,8 +660,6 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
         );
     }
 
-
-    totalmemoryneeded += totalmemoryneeded % gfx.memallignment;
     VkMemoryRequirements memreq;
     vkGetImageMemoryRequirements( gfx.device, *(VkImage*)BAGetPointer(dr->images.images, 0), &memreq);
     VkMemoryAllocateInfo mai = {
@@ -673,6 +680,8 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
             dr->images.memory,
             *(uint32_t*)BAGetPointer(dr->images.offsets, i)
         );
+
+        printf("gee %p / %d\n", *(VkImage*)BAGetPointer(dr->images.images, i), *(uint32_t*)BAGetPointer(dr->images.offsets, i));
         
         VkImageViewCreateInfo ivci = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -701,6 +710,11 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
         );
     }
 
+    /*  */
+    VkFence imgfence;
+    VkFenceCreateInfo fenceci = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, 0, 0 };
+    vkCreateFence(gfx.device, &fenceci, NULL, &imgfence);
+    
     GraphicsBuffer interbuff;
     CreateBuffer(
         &interbuff,
@@ -723,13 +737,15 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = 0
     };
-    vkBeginCommandBuffer(intercommand, &cbbi);
     void *texdata;
     vkMapMemory( gfx.device, interbuff.memory, 0, biggestimage, 0, &texdata );
     for (uint32_t i = 0; i < num; ++i){
+    vkBeginCommandBuffer(intercommand, &cbbi);
         DirectImage file =  directimage_create_bmp(files[i]);
         memcpy(texdata, file.data, *(uint32_t*)BAGetPointer(dr->images.sizes, i));
-    
+   
+        Vector2i dim = *(Vector2i*)BAGetPointer(dr->images.dims, i);
+
         VkImageMemoryBarrier frombarrier = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .pNext = 0,
@@ -794,21 +810,23 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
             1, &tobarrier
         );        
         directimage_destroy( &file );
+        vkEndCommandBuffer(intercommand);
+        VkSubmitInfo submitInfo = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = 0,
+            .pWaitDstStageMask = 0,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &intercommand,
+            .signalSemaphoreCount = 0,
+            .pSignalSemaphores = 0
+        };
+        vkQueueSubmit(gfx.graphics, 1, &submitInfo, imgfence);
+        vkWaitForFences(gfx.device, 1, &imgfence, VK_TRUE, UINT64_MAX);
     }
-    vkEndCommandBuffer(intercommand);
-    VkSubmitInfo submitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = 0,
-        .pWaitDstStageMask = 0,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &intercommand,
-        .signalSemaphoreCount = 0,
-        .pSignalSemaphores = 0
-    };
     vkUnmapMemory(gfx.device, interbuff.memory);
-    vkQueueSubmit(gfx.graphics, 1, &submitInfo, VK_NULL_HANDLE);
+    vkDestroyFence(gfx.device, imgfence, NULL);
 
     return;
 }
@@ -1824,31 +1842,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             default: break;
         }
     }
-    /*
-    VkDescriptorBufferInfo bufferInfo = {
-        .buffer = currdraw->hcbuffers.buffer,
-        .offset = 0,
-        .range = sizeof(Matrix) * 1024
-    };
-    VkWriteDescriptorSet descriptorWrite = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = 0,
-        .dstSet = currdraw->discset,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .pImageInfo = 0,
-        .pBufferInfo = &bufferInfo,
-        .pTexelBufferView = 0
-    };
-    */
     vkUpdateDescriptorSets( gfx.device, dci.resourceinfocount, descriptorwrites, 0, 0 );
-
-
-    /* Images */ 
-    /* Image Samplers */
-
 
     VkDescriptorSetLayout dslayouts[] = {
         gfx.drawers[gfx.drawersused-1].disclayout
@@ -2068,6 +2062,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
   
+
     void *tosend;
     if (rdi.discard){
         tosend = rdi.mesh.vertdata;
@@ -2115,7 +2110,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
             voffset = vmem->end+1;
             vmem->next = malloc( sizeof(MeshMemory) );
             *vmem->next = (MeshMemory){
-                voffset, voffset + (rdi.mesh.vertcount * drawer->vsize) - 1,
+                voffset, voffset + (rdi.mesh.vertcount * drawer->vsize-1),
                 malloc(sizeof(uint32_t) * rdi.mesh.indcount), rdi.mesh.indcount,
                 vmem, 0, 
                 true, dr->ref
@@ -2168,7 +2163,6 @@ Return_t DrawableSetTransform( Drawable dr, Matrix m ){
 
 uint32_t RegenerateIndicies( Drawer drawer ){
     MeshMemory *mem = &drawer->db.vtxmem;
-    mem = mem->next;
     uint32_t bsize = 1024;
 
     uint32_t buffer[bsize];
@@ -2193,7 +2187,6 @@ uint32_t RegenerateIndicies( Drawer drawer ){
             buffer[intobuffer] = mem->inds[i] + vert;
             intobuffer++;
         }
-        printf("Jesus Crud %d\n", mem->start);
         mem = mem->next;
     }
     MeshResource_t m = {
@@ -2467,15 +2460,15 @@ MeshResource_t MeshCreateSPyramid( float peak, Box2D tex, MeshCreateInfo mci ){
     ret.inddata[3] = 0;
     ret.inddata[4] = 2;
     ret.inddata[5] = 4;
-    
+
     ret.inddata[6] = 0;
     ret.inddata[7] = 4;
     ret.inddata[8] = 3;
-    
+
     ret.inddata[9] = 0;
     ret.inddata[10] = 3;
     ret.inddata[11] = 1;
-    
+     
     /*{
         0, 1, 2,
         0, 2, 4,
