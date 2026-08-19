@@ -79,6 +79,7 @@ bool window_key_down(char c);
 
 Vector2 window_centre( void );
 Vector2 WindowDimensions( void );
+Vector2 WindowGetNormPos( void );
 
 /* GRAPHICS */
 
@@ -93,14 +94,6 @@ typedef struct DrawableDef *Drawable;
 typedef struct DrawerDef *Drawer;
 struct CameraInfo;
 
-typedef struct Vertex{
-    Vector3 pos;
-    Vector3 nrm;
-    Vector2 tex;
-
-    uint32_t trsid;
-    uint32_t matid;
-} Vertex;
 typedef struct MeshResource_t {
     void     *vertdata; uint32_t vertcount;
     uint32_t *inddata;  uint32_t indcount;
@@ -113,6 +106,7 @@ typedef struct DrawableCreateInfo{
 } DrawableCreateInfo;
 
 Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi );
+void     DrawableDestroy( Drawer drawer, Drawable drawable );
 Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t size, uint32_t offset );
 Return_t DrawableSetVisability( Drawable dr, bool vis );
 Return_t DrawableSetTransform( Drawable dr, Matrix m );
@@ -170,6 +164,7 @@ typedef struct DrawerCreateInfo {
 
     const char *vshader;
     const char *fshader;
+    uint32_t constdatasize;
     DrawerDrawMethodEnum drawmethod;
     bool transparency;
 
@@ -179,12 +174,13 @@ typedef struct DrawerCreateInfo {
     struct CameraInfo *cam;
 } DrawerCreateInfo;
 Drawer DrawerCreate( DrawerCreateInfo dci );
+void   DrawerDestroy( Drawer drawer );
 
 uint32_t DataTypeToSize( DrawerDataEnum dde );
 
 void WindowClearScreen( );
 void WindowStartDrawing( );
-void WindowDraw( Drawer drawer );
+void WindowDraw( Drawer drawer, void *constdata );
 void WindowFinishDrawing( );
 
 typedef struct CameraInfo {
@@ -199,15 +195,22 @@ CameraInfo camera_get_main_camera( );
 Vector3 camera_get_forward_XZ( CameraInfo cam );
 Vector3 camera_get_forward_XYZ( CameraInfo cam );
 
+Matrix CameraGetView( CameraInfo cam );
+Matrix CameraGetProj( CameraInfo cam );
+Matrix CameraGetDir( CameraInfo cam );
+
+Vector3 CameraGetRay( CameraInfo ci, Vector2 mousepos );
+
 typedef struct MeshFillData {
     void *exdata;
     void *toptr;
     union {
         struct {
             float x, y;
+            uint32_t gx, gy;
         } grid;
         struct {
-            float x, y, z
+            float x, y, z;
         } spyramid;
     };
 } MeshFillData;

@@ -7,59 +7,35 @@
 
 ECS_t ecs;
 
-typedef struct Position{
-    float x, y, z;
-} Position;
+typedef struct ObjVertex{
+    Vector3 pos;
+    Vector3 nrm;
+    Vector2 tex;
 
-typedef struct {
+    uint32_t trsid;
+    uint32_t matid;
+} ObjVertex;
+typedef struct UiVertex {
     Vector2 pos, tex;
     Vector4 col;
-} Vert2D;
+} UiVertex;
+typedef struct LandVertex {
+    Vector3 pos;
+    uint32_t x;
+} LandVertex;
 
 struct {
     float  width, depth;
     float *height;
+    float scale;
+
+    Drawable land;
 } WorldData;
 
-void GridFill( MeshFillData data ){
-    Vertex v = {
-        {(data.grid.x * 10) - 5.0, (data.grid.y * 10) - 5.0, 0},
-        {0, 0, 0},
-        {data.grid.x, data.grid.y},
-        ((uint32_t*)data.exdata)[0],
-        ((uint32_t*)data.exdata)[1]
-    };
-    *(Vertex*)data.toptr = v;
-}
+Drawer landdrawer, objdrawer, uidrawer;
 
-void PyrFill( MeshFillData data ){
-    Vertex v = {
-        {data.spyramid.x - 0.5, 1.0 - data.spyramid.y, data.spyramid.z - 0.5},
-        {0, 0, 0},
-        {data.spyramid.x * 0.25, data.spyramid.z * 0.25},
-        ((uint32_t*)data.exdata)[0],
-        ((uint32_t*)data.exdata)[1]
-    };
-    *(Vertex*)data.toptr = v;
-};
-
-void ApplyHeightMap( MeshResource_t *mesh ){
-    DirectImage img = directimage_create_bmp("HeightMap2.bmp");
-
-    uint32_t size = img.width * img.height;
-
-    for (uint32_t i = 0; i < size; ++i){
-        Vertex *mod = mesh->vertdata;
-        mod[i].pos.z += (img.data[i].r / 256.0);
-
-    }
-
-    directimage_destroy( &img );
-}
-
-int main(){
-    InitWindow( 1280, 720, "HIYA", 0 );
-
+void CreateDrawers( void ){ 
+    
     DrawerVertexInfo dvi[] = {
         // binding, location, data type
         {0, 0, DDE_float3},
@@ -99,6 +75,7 @@ int main(){
 
         .vshader = "world.vert.spirv",
         .fshader = "world.frag.spirv",
+        .constdatasize = 64,
         .drawmethod = DDME_triangle,
         .transparency = true,
 
@@ -107,7 +84,7 @@ int main(){
 
         .is2d = false
     };
-    Drawer worlddrawer = DrawerCreate( dci );
+    objdrawer = DrawerCreate( dci );
     
     DrawerVertexInfo dvi2[] = {
         {0, 0, DDE_float2},
@@ -131,6 +108,7 @@ int main(){
 
         .vshader = "ui.vert.spirv",
         .fshader = "ui.frag.spirv",
+        .constdatasize = 0,
         .drawmethod = DDME_triangle,
         .transparency = true,
 
@@ -139,10 +117,165 @@ int main(){
 
         .is2d = true
     };
-    Drawer uidrawer = DrawerCreate( dci2 );
+    uidrawer = DrawerCreate( dci2 );
 
-    printf("we here?\n");
+    DrawerVertexInfo dvi3[] = {
+        // binding, location, data type
+        {0, 0, DDE_float3},
+        {0, 1, DDE_uint1},
+    };
+    DrawerResourceInfo dri3[] = { 
+    };
+    DrawerCreateInfo dci3 = {
+        .vertexinfos = dvi3,
+        .vertexinfocount = 2,
+        .resourceinfos = dri3,
+        .resourceinfocount = 0,
 
+        .vshader = "land.vert.spirv",
+        .fshader = "land.frag.spirv",
+        .constdatasize = 64 + 8,
+        .drawmethod = DDME_triangle,
+        .transparency = true,
+
+        .vertexcount = 50000,
+        .indexcount = 1000000,
+
+        .is2d = false
+    };
+    landdrawer = DrawerCreate( dci3 );
+
+};
+
+void GridFill( MeshFillData data ){
+    ObjVertex v = {
+        {(data.grid.x * 10) - 5.0, (data.grid.y * 10) - 5.0, 0},
+        {0, 0, 0},
+        {data.grid.x, data.grid.y},
+        ((uint32_t*)data.exdata)[0],
+        ((uint32_t*)data.exdata)[1]
+    };
+    *(ObjVertex*)data.toptr = v;
+}
+
+void PyrFill( MeshFillData data ){
+    ObjVertex v = {
+        {data.spyramid.x - 0.5, 0.0 - data.spyramid.y, data.spyramid.z - 0.5},
+        {0, 0, 0},
+        {data.spyramid.x * 0.25, data.spyramid.z * 0.25},
+        ((uint32_t*)data.exdata)[0],
+        ((uint32_t*)data.exdata)[1]
+    };
+    *(ObjVertex*)data.toptr = v;
+};
+
+void LandGridFill( MeshFillData data ){
+    float theheight = WorldData.height[data.grid.gy * 64 + data.grid.gx];
+    float halfscale = WorldData.scale / 2.0;
+    LandVertex v = {
+        {(data.grid.x * WorldData.scale) - halfscale, 1.0 - theheight, (data.grid.y * WorldData.scale) - halfscale},
+        0
+    };
+    *(LandVertex*)data.toptr = v;   
+}
+
+void WorldCreate(){
+    DirectImage img = directimage_create_bmp("HeightMap2.bmp");
+
+    uint32_t size = img.width * img.height;
+
+    WorldData.width = img.width;
+    WorldData.depth = img.height;
+
+    WorldData.height = malloc(sizeof(float) * img.width * img.height);
+    for (uint32_t i = 0; i < size; ++i){
+        WorldData.height[i] = (float)img.data[i].r / 256.0;
+    }
+
+    WorldData.scale = 15;
+
+    directimage_destroy( &img );   
+
+    MeshCreateInfo mci = {
+        LandGridFill, 0, sizeof(LandVertex)
+    };
+    Grid2D g = {
+        1, 1,
+        8, 8,
+        0, 0
+    };
+    Box2D b = Grid2DGetBox2D(g, 7, 1);
+
+    DrawableCreateInfo mapregister = {
+        MeshCreateGrid( 62, 62, 1.0f, b, mci ),
+        true, MatrixZero()
+    };
+    WorldData.land  = CreateDrawable( landdrawer, mapregister );
+}
+
+Vector3 GetPosOnLand( Vector2 inpos, CameraInfo ci ){
+    bool found = false;
+
+    Vector2 mpos = WindowGetNormPos();
+    mpos = Vector2Scale(mpos, 2.0);
+    Vector3 from = ci.position;
+
+    Vector3 raystep = CameraGetRay( ci, mpos ); 
+
+    raystep = Vector3Scale(raystep, 0.01);
+
+    uint32_t intoloop = 0;
+    while (!found) {
+        if (intoloop++ > 10000) break;
+
+        from = Vector3Add( from, raystep );
+
+        if (
+            (fabs(from.x) > (WorldData.scale / 2.0)) ||
+            (fabs(from.z) > (WorldData.scale / 2.0))
+        ){
+            // OUT
+            if ( from.y > 1.0 ) found = true;
+        }
+            
+        else {
+            // IN
+
+            float fx = (from.x + (WorldData.scale / 2.0)) * (WorldData.width / WorldData.scale); 
+            float fz = (from.z + (WorldData.scale / 2.0)) * (WorldData.depth / WorldData.scale); 
+
+            // TODO: fix the fx fz calcs so they dont [64, 63, ..., 0, 1, ..., 64];
+
+
+            uint32_t x = (uint32_t)roundf(fx);
+            uint32_t z = (uint32_t)roundf(fz);
+
+            float h = WorldData.height[ x + (z * (uint32_t)WorldData.width) ];
+            if ( from.y > 1.0 - h ){
+                found = true;
+            }
+
+        }
+
+    }
+    if (found){
+        //printf("yaaaay %f %f %f\n", from.x, from.y, from.z);
+        return from;
+    }
+
+    //printf("%f %f %f\n", raystep.x, raystep.y, raystep.z);
+
+    return (Vector3){0, 0, 0};
+}
+
+int main(){
+    InitWindow( 1280, 720, "HIYA", 0 );
+
+    CreateDrawers();
+
+    WorldCreate();
+
+    /* ECS example
     ComponentDefine comps[] = {
         {"pos", sizeof(Position), 0},
         {"gfx", sizeof(Drawable), 0},
@@ -157,8 +290,8 @@ int main(){
     };
     ECS_AddComp(ecs, mapent, poscomp, &mappos);
     ECS_AddComp(ecs, mapent, ECS_GetComp(ecs, "gfx"), 0);
-
-    
+    */
+ 
     Grid2D g = {
         1, 1,
         8, 8,
@@ -169,42 +302,23 @@ int main(){
     uint32_t trsmad[2] = {1, 1};
 
     MeshCreateInfo mci = {
-        GridFill, trsmat, sizeof(Vertex)
+        GridFill, trsmat, sizeof(ObjVertex)
     };
     MeshCreateInfo mci2 = {
-        PyrFill, trsmad, sizeof(Vertex)
+        PyrFill, trsmad, sizeof(ObjVertex)
     };
-
-    //MeshResource_t mesh = MeshCreateGrid( 30, 30, 1.0f, b, mci );
-    //free(mesh.vertdata);
-    //free(mesh.inddata);
-
-    DrawableCreateInfo mapregister = {
-        MeshCreateGrid( 62, 62, 1.0f, b, mci ),
-        true, MatrixZero()
-    };
-    ApplyHeightMap( &mapregister.mesh );
-    Drawable mapdrawable  = CreateDrawable( worlddrawer, mapregister );
 
     DrawableCreateInfo pyrreg = {
         MeshCreateSPyramid( 1.0, b, mci2 ),
-        true, MatrixZero()
+        true, MatrixScale(0.1, 0.1, 0.1)//MatrixZero()
     };
-    Drawable pyrdrawable  = CreateDrawable( worlddrawer, pyrreg );
+    Drawable pyrdrawable  = CreateDrawable( objdrawer, pyrreg );
 
     ExitOnError(DrawableSetTransform(
-        mapdrawable,
-        MatrixMultiply(
-            MatrixRotateX(3.14159 / 2.0),
-            MatrixTranslate( 0, 1, 0 )
-        )
-    ));
-    ExitOnError(DrawableSetTransform(
-        pyrdrawable, MatrixRotateY( 3.14159 )//MatrixIdentity()
+        pyrdrawable, MatrixIdentity()
     ));
 
-
-    Vert2D testdata[] = {
+    UiVertex testdata[] = {
         {{-0.01,  0.01}, {0,0}, {0,0,0,0}},
         {{-0.01, -0.01}, {0,0}, {0,0,0,0}},
         {{ 0.01,  0.01}, {0,0}, {0,0,0,0}},
@@ -213,7 +327,7 @@ int main(){
     MeshResource_t testmesh = {
         .vertdata = testdata, .vertcount = 3,
         .inddata = testdata2, .indcount = 3,
-        .vertsize = sizeof(Vert2D),
+        .vertsize = sizeof(UiVertex),
         0, 0
     };
     DrawableCreateInfo testreg = {
@@ -222,12 +336,6 @@ int main(){
     };
     Drawable testdrawable = CreateDrawable( uidrawer, testreg );
 
-
-//    CameraInfo ci = {
-//        (Vector3){0, -1, 1},
-//        -PI/3.0, 0,
-//        3.14159 / 3.0, 1280.0 / 720.0
-//    };
     CameraInfo ci = {
         (Vector3){0, 0, 1},
         0, 0,
@@ -235,6 +343,7 @@ int main(){
     };
     camera_set_main_camera( ci );
 
+    Vector3 geebin = {0,0,0};
 
     while (AppRunning()){
         //WindowClearScreen( );
@@ -271,7 +380,7 @@ int main(){
 
 
         Vector3 cammoving = camera_get_forward_XZ(ci);
-
+        geebin = GetPosOnLand( (Vector2){0, 0}, ci );
         if(window_key_down('w')){
             ci.position.z += cammoving.z / 60.0;
             ci.position.x += cammoving.x / 60.0;
@@ -305,11 +414,25 @@ int main(){
         camera_set_main_camera( ci );
 
         ClearWindowEvents(events);
-
+        
+        ExitOnError(DrawableSetTransform(
+            pyrdrawable, MatrixTranslate(geebin.x, geebin.y, geebin.z)
+        ));
+        
         WindowStartDrawing();
+        
+        Matrix m = MatrixMultiply(
+            CameraGetView( ci ),
+            CameraGetProj( ci )
+        );
 
-        WindowDraw( worlddrawer );
-        WindowDraw( uidrawer );
+        Matrix mm[2] = {
+            m, m
+        };
+
+        WindowDraw( landdrawer, mm );
+        WindowDraw( objdrawer, &m );
+        WindowDraw( uidrawer, 0 );
         
         WindowFinishDrawing();
     }

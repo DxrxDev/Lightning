@@ -34,8 +34,10 @@
 static struct WingFX_instance{
     bool running;
     const char *title;
+
     bool keys[UINT8_MAX];
     bool mouse[NUMBER_MOUSE_BUTTONS];
+    Vector2 mpos;
 
     uint32_t width, height;
 
@@ -50,6 +52,9 @@ static struct WingFX_instance{
 Return_t InitGraphics( );
 void InitWindow( uint32_t width, uint32_t height, const char *title, enum WindowCreationFlags flag ){
     wfx.title = title;
+    wfx.mpos = (Vector2){0, 0};
+    wfx.width = width;
+    wfx.height = height;
 
     wfx.conn = xcb_connect(NULL, NULL);
     if (xcb_connection_has_error(wfx.conn)){
@@ -287,6 +292,10 @@ nodisc WindowEvent *GetWindowEvents( void ){
                 ret->next = malloc(sizeof(WindowEvent));
                 on = ret->next;
 
+                wfx.mpos = (Vector2){
+                    (float)e.event_x, (float)e.event_y,
+                };
+
                 *on = (WindowEvent){
                     WET_MouseMove,
                     {.mm = (struct WE_MouseMove){
@@ -315,14 +324,15 @@ nodisc WindowEvent *GetWindowEvents( void ){
                     }},
                     0
                 };
-                //wfx.width = e.width;
-                //wfx.height = e.height;
+                wfx.width = e.width;
+                wfx.height = e.height;
             } break;
             case XCB_EXPOSE: {
                 xcb_expose_event_t e = *(xcb_expose_event_t*)event;
                 printf("WINDOW EXPOSE EVENT { %d, %d }\n", e.width, e.height);
                 uint32_t vals[] = {wfx.width, wfx.height};
                 xcb_configure_window( wfx.conn, wfx.window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, vals );
+                wfx.width = e.width; wfx.height = e.height;
             } break;
             case 0: break;
             default: {
@@ -355,6 +365,14 @@ Vector2 window_centre( void ){
 }
 Vector2 WindowDimensions( void ){
     return (Vector2){wfx.width, wfx.height};
+}
+Vector2 WindowGetNormPos(){
+    float x = wfx.mpos.x / (float)wfx.width;
+    float y = wfx.mpos.y / (float)wfx.height;
+    x -= 0.5;
+    y -= 0.5;
+
+    return (Vector2){ x, y };
 }
 
 typedef struct GraphicsBuffer{
@@ -400,7 +418,6 @@ typedef struct DrawerDef {
     VkDescriptorSetLayout disclayout;
   
     GraphicsBuffer buffers, hcbuffers;
-    //GraphicsBuffer index
     GraphicsImages images;
     size_t vsize, voffset, vnum;
     size_t isize, ioffset, inum;
@@ -410,6 +427,9 @@ typedef struct DrawerDef {
     uint32_t indcount;
 
     bool is2d;
+
+    uint32_t constdatasize;
+    bool hasdiscset;
 } DrawerDef;
 
 typedef struct DrawableDef {
@@ -680,8 +700,6 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
             dr->images.memory,
             *(uint32_t*)BAGetPointer(dr->images.offsets, i)
         );
-
-        printf("gee %p / %d\n", *(VkImage*)BAGetPointer(dr->images.images, i), *(uint32_t*)BAGetPointer(dr->images.offsets, i));
         
         VkImageViewCreateInfo ivci = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -808,7 +826,7 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
             0, 0,
             0, 0,
             1, &tobarrier
-        );        
+        );
         directimage_destroy( &file );
         vkEndCommandBuffer(intercommand);
         VkSubmitInfo submitInfo = {
@@ -824,6 +842,7 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
         };
         vkQueueSubmit(gfx.graphics, 1, &submitInfo, imgfence);
         vkWaitForFences(gfx.device, 1, &imgfence, VK_TRUE, UINT64_MAX);
+        vkResetFences( gfx.device, 1, &imgfence );
     }
     vkUnmapMemory(gfx.device, interbuff.memory);
     vkDestroyFence(gfx.device, imgfence, NULL);
@@ -883,9 +902,9 @@ Return_t InitGraphics( ){
         return r;
     }
 
-    gfx.drawers = malloc(sizeof(DrawerDef) * 2);
+    gfx.drawers = malloc(sizeof(DrawerDef) * 32);
     gfx.drawersused = 0;
-    gfx.drawercount = 2; // TODO: fix this lol
+    gfx.drawercount = 32;
 
     return 0;
 }
@@ -1390,6 +1409,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     Drawer currdraw = gfx.drawers + (gfx.drawersused-1);
 
     currdraw->is2d = dci.is2d;
+    currdraw->constdatasize = dci.constdatasize;
 
     currdraw->db.memupdated = true;
     ComponentDefine gfxdefs[] = {
@@ -1733,6 +1753,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     bool nouniform = uniformc == 0;
     bool nosampler = samplerc == 0;
 
+    currdraw->hasdiscset = true;
     VkDescriptorPoolCreateInfo dpci = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
@@ -1768,6 +1789,9 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             ExitOnError("Couldn't allocate descriptor set!\n");
         }
     }
+    else {
+        currdraw->hasdiscset = false;
+    }
 
     /* Uniform Buffers */
 
@@ -1777,13 +1801,14 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-    if (totalhcbuffersize > 0)
-    CreateBuffer(
-        &currdraw->hcbuffers,
-        totalhcbuffersize,
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-    );
+    if (totalhcbuffersize > 0) {
+        CreateBuffer(
+            &currdraw->hcbuffers,
+            totalhcbuffersize,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+        );
+    }
 
     VkDescriptorBufferInfo descriptorbuffers[dci.resourceinfocount];
     VkDescriptorImageInfo  descriptorsamplers[dci.resourceinfocount];
@@ -1825,7 +1850,8 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         } 
     }
 
-    GraphicsImagesCreate( currdraw, samplerc, texturenames );
+    if (!nosampler) 
+        GraphicsImagesCreate( currdraw, samplerc, texturenames );
 
     texturenamesfilled = 0;
     for (uint32_t i = 0; i < dci.resourceinfocount; ++i){
@@ -1851,7 +1877,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         (VkPushConstantRange){
             .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
             .offset = 0,
-            .size = 64 // sizeof matrix (16 * sizeof(float))
+            .size = currdraw->constdatasize
         }
     };
     VkPipelineLayoutCreateInfo plci = {
@@ -1860,8 +1886,8 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .flags = 0,
         .setLayoutCount = 1,
         .pSetLayouts = dslayouts,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = pushconstants
+        .pushConstantRangeCount = (dci.constdatasize > 0) ? 1 : 0,
+        .pPushConstantRanges = (dci.constdatasize > 0) ? pushconstants : 0
     };
     vkCreatePipelineLayout( 
         gfx.device, 
@@ -2054,7 +2080,8 @@ Return_t DrawerUpdateResource( Drawer dr, uint32_t resid, Data_t data, uint32_t 
 
 Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     if (rdi.mesh.vertsize != drawer->vsize){
-        return 0;
+        printf("[%d vs %d]: ", rdi.mesh.vertsize, drawer->vsize);
+        ExitOnError("Trying to create drawable with an incorrect vertex size...\n");
     }
     drawer->db.memupdated = true;
     MeshMemory *vmem = &drawer->db.vtxmem;
@@ -2062,7 +2089,6 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     uint32_t voffset = 0;
     Drawable dr = malloc(sizeof(DrawableDef));
   
-
     void *tosend;
     if (rdi.discard){
         tosend = rdi.mesh.vertdata;
@@ -2090,8 +2116,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     
     dr->ref = ECS_AddEntity( drawer->db.refs );
     if (dr->ref == UINT32_MAX){
-        printf("Ran out of drawable references.....\n");
-        exit(-1);
+        ExitOnError("Ran out of drawable references.....\n");
     }
     ECS_AddComp( drawer->db.refs, dr->ref, 0, 0 );
     ECS_AddComp( drawer->db.refs, dr->ref, 1, 0 );
@@ -2103,8 +2128,7 @@ Drawable CreateDrawable( Drawer drawer, DrawableCreateInfo rdi ){
     while (!foundslot){
         if (vmem->next == 0){
             if (vmem->end + (rdi.mesh.vertcount * drawer->vsize) > drawer->ioffset){
-                printf("RAN OUT OF DATA RAAAAH\n");
-                exit(-1);
+                ExitOnError("RAN OUT OF DATA RAAAAH\n");
             }
 
             voffset = vmem->end+1;
@@ -2168,6 +2192,7 @@ uint32_t RegenerateIndicies( Drawer drawer ){
     uint32_t buffer[bsize];
     uint32_t intobuffer = 0;
     uint32_t updatedinds = 0;
+
     while (mem){
         if (!mem->visable){
             mem = mem->next;
@@ -2189,6 +2214,12 @@ uint32_t RegenerateIndicies( Drawer drawer ){
         }
         mem = mem->next;
     }
+
+    if (intobuffer == 0){
+        printf("Empty drawer... (%p)\n", drawer);
+        return 0;
+    }
+
     MeshResource_t m = {
         0, 0,
         buffer, intobuffer
@@ -2197,6 +2228,7 @@ uint32_t RegenerateIndicies( Drawer drawer ){
 
     drawer->indcount = updatedinds + intobuffer;
     printf( "Regenerated drawer (%p) with %d indicies.\n", drawer, drawer->indcount );
+    return 0;
 }
 
 void StartRenderPass(uint32_t image){
@@ -2260,7 +2292,7 @@ void WindowStartDrawing(){
 
     StartRenderPass( onimage );
 }
-void WindowDraw( Drawer drawer ){
+void WindowDraw( Drawer drawer, void *constdata ){
     if (drawer->db.memupdated){
         printf("updating inds\n");
         drawer->db.memupdated = false;
@@ -2275,34 +2307,17 @@ void WindowDraw( Drawer drawer ){
 
     vkCmdBindIndexBuffer( gfx.drawcommand, drawer->buffers.buffer, drawer->ioffset, VK_INDEX_TYPE_UINT32 );
 
-    VkDescriptorSet sets[] = {
-        drawer->discset
-    };
-    vkCmdBindDescriptorSets(
-        gfx.drawcommand,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        drawer->pipelinelayout,
-        0,
-        1, sets,
-        0, 0
-    );
+    if (drawer->hasdiscset){
+        VkDescriptorSet sets[] = { drawer->discset };
+        vkCmdBindDescriptorSets(
+            gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            drawer->pipelinelayout,
+            0, 1, sets, 0, 0
+        );
+    }
 
-    Matrix m;
-    float near = 0.1, far = 5000.0;
-
-    Vector3 lookingat = Vector3Add(
-        gfx.cam.position,
-        camera_get_forward_XYZ( gfx.cam )
-    );
-    m = MatrixMultiply(
-        MatrixLookAt(
-            gfx.cam.position,
-            lookingat,
-            (Vector3){0, 1, 0}
-        ),
-        MatrixPerspective(gfx.cam.fov, gfx.cam.aspect, near, far)
-    );
-    vkCmdPushConstants( gfx.drawcommand, drawer->pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, &m);
+    if (constdata)
+        vkCmdPushConstants( gfx.drawcommand, drawer->pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT, 0, drawer->constdatasize, constdata);
     vkDeviceWaitIdle( gfx.device );
     vkCmdDrawIndexed( gfx.drawcommand, drawer->indcount, 1, 0, 0, 0 );
 
@@ -2373,6 +2388,40 @@ Vector3 camera_get_forward_XYZ( CameraInfo cam ){
     return (Vector3){xaxis, yaxis, zaxis};
 }
 
+Matrix CameraGetView( CameraInfo cam ){
+    Vector3 lookingat = Vector3Add(
+        cam.position,
+        camera_get_forward_XYZ( cam )
+    );
+    return MatrixLookAt(
+        cam.position,
+        lookingat,
+        (Vector3){0, 1, 0} // Up
+    );
+}
+Matrix CameraGetProj( CameraInfo cam ){
+    return MatrixPerspective( cam.fov, cam.aspect, 0.1, 5000 );
+}
+Matrix CameraGetDir( CameraInfo cam ){
+    Vector3 zero = {0,0,0};
+    return MatrixLookAt(
+        zero,
+        camera_get_forward_XYZ( cam ),
+        (Vector3){0, 1, 0} // Up
+    );
+}
+
+Vector3 CameraGetRay( CameraInfo ci, Vector2 mousepos ){
+    Matrix invview = MatrixInvert(CameraGetDir( ci ));
+    Matrix invproj = MatrixInvert(CameraGetProj( ci ));
+    Matrix product = MatrixMultiply( invproj, invview );
+
+    Vector3 raystep = (Vector3){ mousepos.x, mousepos.y, 0.0 };
+    raystep = Vector3Transform( raystep, product );
+
+    return raystep;
+}
+
 /* UI & MISC */
 
 MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D tex, MeshCreateInfo mci ){
@@ -2400,6 +2449,8 @@ MeshResource_t MeshCreateGrid( uint32_t xdiv, uint32_t ydiv, float ratio, Box2D 
             mfd.exdata = mci.data;
             mfd.grid.x = xval;
             mfd.grid.y = yval;
+            mfd.grid.gx = x;
+            mfd.grid.gy = y;
             mci.func( mfd );
         }
     }
