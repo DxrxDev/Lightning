@@ -10,7 +10,6 @@ layout(location = 2) in flat uint f_mat;
 layout(location = 0) out vec4 oCol;
 
 void main(){
-    // vec4(0.15, 0.45, 0.6, 1);
     if (f_mat == 0){
         oCol = texture(texSampler, f_texcoords);
     }
