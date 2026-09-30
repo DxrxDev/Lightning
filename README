@@ -8,6 +8,10 @@ This repo includes:
 
 I plan to split these into their own repos one day.
 
+# Current Progress
+
+![Screenshot of Stones](README.d/2026-09-30.png)
+
 # Aknowlagments
 
 The math library is a fork of raylib's raymath <https://github.com/raysan5/raylib>
