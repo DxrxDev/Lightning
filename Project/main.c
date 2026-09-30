@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+uint32_t AlignTo( uint32_t num, uint32_t alignment ){
+    return num + (alignment - (num % alignment));
+}
+
 ECS_t ecs;
 
 typedef struct ObjVertex{
@@ -21,12 +25,20 @@ typedef struct UiVertex {
 } UiVertex;
 typedef struct LandVertex {
     Vector3 pos;
+    Vector3 nrm;
     uint32_t x;
 } LandVertex;
+
+struct LandPushConst{
+    Matrix cam;
+    Vector3 sunray;
+    Vector2 mouse;
+};
 
 struct {
     float  width, depth;
     float *height;
+    Vector3 *norms;
     float scale;
 
     Drawable land;
@@ -35,7 +47,6 @@ struct {
 Drawer landdrawer, objdrawer, uidrawer;
 
 void CreateDrawers( void ){ 
-    
     DrawerVertexInfo dvi[] = {
         // binding, location, data type
         {0, 0, DDE_float3},
@@ -122,19 +133,20 @@ void CreateDrawers( void ){
     DrawerVertexInfo dvi3[] = {
         // binding, location, data type
         {0, 0, DDE_float3},
-        {0, 1, DDE_uint1},
+        {0, 1, DDE_float3},
+        {0, 2, DDE_uint1},
     };
     DrawerResourceInfo dri3[] = { 
     };
     DrawerCreateInfo dci3 = {
         .vertexinfos = dvi3,
-        .vertexinfocount = 2,
+        .vertexinfocount = 3,
         .resourceinfos = dri3,
         .resourceinfocount = 0,
 
         .vshader = "land.vert.spirv",
         .fshader = "land.frag.spirv",
-        .constdatasize = 64 + 8,
+        .constdatasize = AlignTo(sizeof(struct LandPushConst), 8),
         .drawmethod = DDME_triangle,
         .transparency = true,
 
@@ -170,10 +182,56 @@ void PyrFill( MeshFillData data ){
 };
 
 void LandGridFill( MeshFillData data ){
-    float theheight = WorldData.height[data.grid.gy * 64 + data.grid.gx];
+    float theheight;
+    uint32_t gx = data.grid.gx, gy = data.grid.gy;
     float halfscale = WorldData.scale / 2.0;
+
+    /*
+    if (gx == 0 || gy == 0){
+        LandVertex v = {
+            {(data.grid.x * WorldData.scale) - halfscale, 1.0, (data.grid.y * WorldData.scale) - halfscale},
+            0
+        };
+        *(LandVertex*)data.toptr = v;   
+        return;
+    }
+    if (gx) --gx;
+    if (gy) --gy;
+    */ 
+
+    theheight = WorldData.height[
+        gy * 64 + gx
+    ];
+
+    float
+        ydiffz = 0,
+        ydiffx = 0
+    ;
+
+    // Calculating left-right difference
+    if (!gx){
+        ydiffx = WorldData.height[(gy * 64) + gx + 1];
+    }
+    else {
+        ydiffx = WorldData.height[(gy * 64) + gx - 1] - WorldData.height[(gy * 64) + gx + 1];
+    }
+
+    // Calculating top-bottom difference
+    if (!gy){
+        ydiffz = WorldData.height[(gy * 64) + gx + 1];
+    }
+    else {
+        ydiffz = WorldData.height[(gy * 64) + gx - 1] - WorldData.height[(gy * 64) + gx + 1];
+    }
+    // ...
+
+    Vector3 norm = Vector3CrossProduct(
+        Vector3Normalize((Vector3){0, ydiffz, 1}),
+        Vector3Normalize((Vector3){1, ydiffx, 0})
+    );
     LandVertex v = {
         {(data.grid.x * WorldData.scale) - halfscale, 1.0 - theheight, (data.grid.y * WorldData.scale) - halfscale},
+        norm,
         0
     };
     *(LandVertex*)data.toptr = v;   
@@ -190,6 +248,16 @@ void WorldCreate(){
     WorldData.height = malloc(sizeof(float) * img.width * img.height);
     for (uint32_t i = 0; i < size; ++i){
         WorldData.height[i] = (float)img.data[i].r / 256.0;
+    }
+
+    for (uint32_t y = 0; y < WorldData.depth; ++y){
+        for (uint32_t x = 0; x < WorldData.width; ++x){
+            uint32_t i = (y * WorldData.depth) + x;
+
+            float h = WorldData.height[i];
+
+            float rad = atanf( 1.0f / h );
+        }
     }
 
     WorldData.scale = 15;
@@ -230,22 +298,21 @@ Vector3 GetPosOnLand( Vector2 inpos, CameraInfo ci ){
 
         from = Vector3Add( from, raystep );
 
+        //from.x += 1.0 / (float)WorldData.scale;
+        //from.z += 1.0 / (float)WorldData.scale;
+
         if (
             (fabs(from.x) > (WorldData.scale / 2.0)) ||
             (fabs(from.z) > (WorldData.scale / 2.0))
         ){
             // OUT
             if ( from.y > 1.0 ) found = true;
-        }
-            
+        }        
         else {
             // IN
 
             float fx = (from.x + (WorldData.scale / 2.0)) * (WorldData.width / WorldData.scale); 
             float fz = (from.z + (WorldData.scale / 2.0)) * (WorldData.depth / WorldData.scale); 
-
-            // TODO: fix the fx fz calcs so they dont [64, 63, ..., 0, 1, ..., 64];
-
 
             uint32_t x = (uint32_t)roundf(fx);
             uint32_t z = (uint32_t)roundf(fz);
@@ -267,6 +334,8 @@ Vector3 GetPosOnLand( Vector2 inpos, CameraInfo ci ){
 
     return (Vector3){0, 0, 0};
 }
+
+
 
 int main(){
     InitWindow( 1280, 720, "HIYA", 0 );
@@ -345,6 +414,7 @@ int main(){
 
     Vector3 geebin = {0,0,0};
 
+    float timeofday = 0;
     while (AppRunning()){
         //WindowClearScreen( );
         WindowEvent *events = GetWindowEvents(), *e = events;
@@ -426,11 +496,26 @@ int main(){
             CameraGetProj( ci )
         );
 
-        Matrix mm[2] = {
-            m, m
+        Vector2 mousep = {0, 0};
+        
+        Vector3 sunray = {0, 1, 0};
+        sunray = Vector3Transform(
+            sunray,
+            MatrixRotateZ( timeofday )
+        );
+        
+        // ENABLE FOR DAY/NIGHT CYCLE
+        //timeofday += 3.14159 * (0.5 / 60.0);
+
+        timeofday = 1;
+
+        struct LandPushConst lpc = {
+            m,
+            sunray,
+            mousep
         };
 
-        WindowDraw( landdrawer, mm );
+        WindowDraw( landdrawer, &lpc );
         WindowDraw( objdrawer, &m );
         WindowDraw( uidrawer, 0 );
         
