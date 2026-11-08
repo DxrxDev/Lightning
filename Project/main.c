@@ -91,6 +91,7 @@ void CreateDrawers( void ){
         .vertexcount = 50000,
         .indexcount = 1000000,
 
+        .depthenabled = true,
         .is2d = false
     };
     objdrawer = DrawerCreate( dci );
@@ -118,6 +119,7 @@ void CreateDrawers( void ){
         .vertexcount = 50000,
         .indexcount = 1000000,
 
+        .depthenabled = true,
         .is2d = false
     };
     landdrawer = DrawerCreate( dci3 );
@@ -372,7 +374,7 @@ int main(){
 
     blugg.panel.x += 100;
     blugg.panel.y += 100;
-    blugg.panel.colour = (Vector4){0, 0.3, 0.2, 1.0};
+    blugg.panel.colour = (Vector4){0, 0.3, 0.2, 0.5};
     UiAddComponent( ui, NULL, blugg );
     
     UiRedraw( ui );

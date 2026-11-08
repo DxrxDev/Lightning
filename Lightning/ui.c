@@ -73,6 +73,7 @@ UiManager UiCreate( float x, float y, float w, float h ){
         .vertexcount = 1000,
         .indexcount = 100,
 
+        .depthenabled = false,
         .is2d = true
     };
     ret->dr = DrawerCreate( dci );

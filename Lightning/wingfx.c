@@ -850,31 +850,6 @@ void GraphicsImagesCreate( Drawer dr, uint32_t num, const char **files ){
     return;
 }
 
-/* OVERCOMPLICATED?
-void StackedBufferCreate(StackedBuffer *bufs, uint32_t *sizes, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties){
-    uint32_t totalsize = 0;
-    uint32_t bufcount = 0;
-    while (sizes[bufcount]){
-        totalsize += sizes[bufcount];
-        ++bufcount;
-    }
-
-    bufs->buffers = BACreate(sizeof(VkBuffer), bufcount);
-    VkBufferCreateInfo bci = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = 0,
-        .flags = 0,
-        .size = 0, // To be set in following loop
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-    };
-    for (uint32_t i = 0; i < bufcount; ++i){
-        bci.size = sizes[i];
-        VkCreateBuffer( gfx.device, &bci, 0, BAGetPointer( bufs->buffers, 0 ) );
-    }
-
-}
-*/
-
 Return_t InitGraphics( ){
     Return_t r;
     r = CreateInstance();
@@ -1634,7 +1609,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .depthTestEnable = VK_TRUE,
+        .depthTestEnable = (dci.depthenabled) ? VK_TRUE : VK_FALSE,
         .depthWriteEnable = VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
         .depthBoundsTestEnable = VK_FALSE,
@@ -1734,7 +1709,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         .pBindings = dslayoutbinding
     };
 
-    if (vkCreateDescriptorSetLayout(gfx.device, &dslayoutcreateinfo, nullptr, &gfx.drawers[gfx.drawersused-1].disclayout) != VK_SUCCESS){
+    if (vkCreateDescriptorSetLayout(gfx.device, &dslayoutcreateinfo, nullptr, &currdraw->disclayout) != VK_SUCCESS){
         ExitOnError("Couldn't create descriptor set layout! (geeb)");
     }
 
@@ -1775,7 +1750,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     }
    
     if (!nouniform || !nosampler){
-        if (vkCreateDescriptorPool(gfx.device, &dpci, 0, &gfx.drawers[gfx.drawersused-1].discpool) != VK_SUCCESS){
+        if (vkCreateDescriptorPool(gfx.device, &dpci, 0, &currdraw->discpool) != VK_SUCCESS){
             ExitOnError("Couldn't create descriptor pool!");
         }
         VkDescriptorSetAllocateInfo sdai = {
@@ -1871,7 +1846,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     vkUpdateDescriptorSets( gfx.device, dci.resourceinfocount, descriptorwrites, 0, 0 );
 
     VkDescriptorSetLayout dslayouts[] = {
-        gfx.drawers[gfx.drawersused-1].disclayout
+        currdraw->disclayout
     };
     VkPushConstantRange pushconstants[] = {
         (VkPushConstantRange){
@@ -1892,7 +1867,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     vkCreatePipelineLayout( 
         gfx.device, 
         &plci, nullptr, 
-        &gfx.drawers[gfx.drawersused-1].pipelinelayout
+        &currdraw->pipelinelayout
     );
 
     /* WRAPPING UP */
@@ -1912,7 +1887,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
             .pMultisampleState = &msci,
             .pDepthStencilState = &dsci,
             .pColorBlendState = &cbci,
-            .layout = gfx.drawers[gfx.drawersused-1].pipelinelayout,
+            .layout = currdraw->pipelinelayout,
             .renderPass = gfx.renderpass,
             .subpass = 0
         },
@@ -1921,11 +1896,11 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
     vkCreateGraphicsPipelines(
         gfx.device, VK_NULL_HANDLE,
         1, pci, nullptr,
-        &gfx.drawers[gfx.drawersused-1].pipeline
+        &currdraw->pipeline
     );
 
     currdraw->indcount = 0;
-    return &gfx.drawers[gfx.drawersused-1];
+    return currdraw;
 }
 
 uint32_t DataTypeToSize( DrawerDataEnum dde ){

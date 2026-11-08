@@ -170,6 +170,7 @@ typedef struct DrawerCreateInfo {
 
     uint32_t vertexcount, indexcount;
 
+    bool depthenabled;
     bool is2d;
     struct CameraInfo *cam;
 } DrawerCreateInfo;
