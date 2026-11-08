@@ -362,6 +362,34 @@ int main(){
 
     Vector3 geebin = {0,0,0};
 
+    /* PLAN:
+    
+        Create a ui element in the top left
+        that has a white background with a 
+        status bar showing the day cycle
+    */
+    UiComponentInfo daynightbackground = {
+        .settings = UI_BASE_SETTINGS,
+        .type = UI_PANEL,
+        .panel = {
+            15, 15, 250, 50,
+            .colour = { 0.85, 0.75, 0.6, 1 }
+        }
+    };
+    UiAddComponent( ui, NULL, daynightbackground );
+
+    UiComponentInfo daynightstatus = {
+        .settings = UI_BASE_SETTINGS,
+        .type = UI_BAR,
+        .bar = {
+            25, 25, 230, 30,
+            .fg = { 0, 1, 0, 1 },
+            .bg = { 1, 0, 0, 1 },
+            .going = UI_LEFT_RIGHT
+        }
+    };
+
+    /*
     UiComponentInfo blugg = {
         .settings = UI_BASE_SETTINGS,
         .type = UI_PANEL,
@@ -376,6 +404,7 @@ int main(){
     blugg.panel.y += 100;
     blugg.panel.colour = (Vector4){0, 0.3, 0.2, 0.5};
     UiAddComponent( ui, NULL, blugg );
+    */
     
     UiRedraw( ui );
 
