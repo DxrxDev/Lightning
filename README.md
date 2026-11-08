@@ -1,0 +1,31 @@
+# What is this repository
+
+This repo includes:
+
+- Lightning (my game engine)
+- Mokosh (my build system)
+- Veles  (my image, audio, and video reader/writer) (CURRENTLY CALLED MMM) 
+
+I plan to split these into their own repos one day.
+
+# Current Progress
+
+![Screenshot of Stones](README.d/2026-09-30.png)
+
+# Aknowlagments
+
+The math library is a fork of raylib's raymath <https://github.com/raysan5/raylib>
+
+This project was heavily based on the vulkan-tutorial website <https://vulkan-tutorial.com/>
+
+# Known Issues
+
+E = Easy fix
+H = Time consuming
+? = Unknown cause
+! = A real pickle
+
+- Inconsistencies in naming convensions (E)
+- Unable to delete Drawables (H)
+- Window height randomly increases (?) (hasnt happened in a while? possible accidental writes outside of intedned memory block)
+- Graphics look kinda really ungly (H)

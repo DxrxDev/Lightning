@@ -18,7 +18,7 @@ typedef struct ComponentDefine {
 }ComponentDefine; 
 // End Array with {0, 0} to signify end of component definitions
 
-/* Complex Arrays */
+/* Better Arrays */
 typedef struct BADefine {
     uint32_t datasize;
     uint32_t datacount;

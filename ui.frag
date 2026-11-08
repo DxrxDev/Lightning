@@ -4,10 +4,11 @@ layout(set = 0, binding = 0) uniform sampler2D texSampler;
 
 layout(location = 0) in vec3 f_pos;
 layout(location = 1) in vec2 f_texcoords;
+layout (location = 2) in vec4 f_col;
 
 layout(location = 0) out vec4 oCol;
 
 void main(){
-    oCol = vec4(0.15, 0.45, 0.6, 1);
+    oCol = f_col;//vec4(0.15, 0.45, 0.6, 1);
     //oCol = texture(texSampler, f_texcoords);
 }

@@ -25,6 +25,15 @@ geom.files = {
 }
 geom.warnings = warnings.all
 
+ui = CreateProject( "ui", "out/int", projecttypes.int )
+ui.files = {
+    "Lightning/ui.c"
+}
+ui.includedirs = {
+    "MasterMediaManager"
+}
+ui.warnings = warnings.all
+
 app = CreateProject( "app", "out/int", projecttypes.int )
 app.files = {
 	"Project/main.c",
@@ -41,6 +50,7 @@ game.files = {
 addobjs( wingfx, game )
 addobjs( logic, game )
 addobjs( geom, game )
+addobjs( ui, game )
 
 game.libraries = {
 	"dl", "m", "xcb", "xcb-icccm", "xcb-keysyms", "vulkan"
@@ -57,9 +67,10 @@ buildargs = {
 	{"wg", {wingfx}},
 	{"l",  {logic}},
     {"gm", {geom}},
+    {"ui", {ui}},
 	{"a",  {app}},
 	{"s",  {shaders}},
-	{"all", {wingfx, logic, geom, app, shaders, game}},
+	{"all", {wingfx, logic, geom, ui, app, game}},
 
 	{"run", {rungame}}
 }

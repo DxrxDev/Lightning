@@ -19,10 +19,6 @@ typedef struct ObjVertex{
     uint32_t trsid;
     uint32_t matid;
 } ObjVertex;
-typedef struct UiVertex {
-    Vector2 pos, tex;
-    Vector4 col;
-} UiVertex;
 typedef struct LandVertex {
     Vector3 pos;
     Vector3 nrm;
@@ -44,7 +40,9 @@ struct {
     Drawable land;
 } WorldData;
 
-Drawer landdrawer, objdrawer, uidrawer;
+Drawer landdrawer, objdrawer;
+
+UiManager ui;
 
 void CreateDrawers( void ){ 
     DrawerVertexInfo dvi[] = {
@@ -67,7 +65,7 @@ void CreateDrawers( void ){
             0, 1,
             DRTE_sampler, DRSE_fragment,
             .sampler = {
-                "HeightMap2.bmp"
+                "HeightMap5.bmp"
             }
         },
         {
@@ -97,39 +95,6 @@ void CreateDrawers( void ){
     };
     objdrawer = DrawerCreate( dci );
     
-    DrawerVertexInfo dvi2[] = {
-        {0, 0, DDE_float2},
-        {0, 1, DDE_float2},
-        {0, 2, DDE_float4}
-    };
-    DrawerResourceInfo dri2[] = { 
-        {
-            0, 0,
-            DRTE_sampler, DRSE_fragment,
-            .sampler = {
-                "texture_map.bmp"
-            }
-        },
-    };
-    DrawerCreateInfo dci2 = {
-        .vertexinfos = dvi2,
-        .vertexinfocount = 3,
-        .resourceinfos = dri2,
-        .resourceinfocount = 1,
-
-        .vshader = "ui.vert.spirv",
-        .fshader = "ui.frag.spirv",
-        .constdatasize = 0,
-        .drawmethod = DDME_triangle,
-        .transparency = true,
-
-        .vertexcount = 1000,
-        .indexcount = 100,
-
-        .is2d = true
-    };
-    uidrawer = DrawerCreate( dci2 );
-
     DrawerVertexInfo dvi3[] = {
         // binding, location, data type
         {0, 0, DDE_float3},
@@ -156,7 +121,6 @@ void CreateDrawers( void ){
         .is2d = false
     };
     landdrawer = DrawerCreate( dci3 );
-
 };
 
 void GridFill( MeshFillData data ){
@@ -335,14 +299,14 @@ Vector3 GetPosOnLand( Vector2 inpos, CameraInfo ci ){
     return (Vector3){0, 0, 0};
 }
 
-
-
 int main(){
     InitWindow( 1280, 720, "HIYA", 0 );
 
     CreateDrawers();
 
     WorldCreate();
+
+    ui = UiCreate( 0, 0, 1280, 720 );
 
     /* ECS example
     ComponentDefine comps[] = {
@@ -387,24 +351,6 @@ int main(){
         pyrdrawable, MatrixIdentity()
     ));
 
-    UiVertex testdata[] = {
-        {{-0.01,  0.01}, {0,0}, {0,0,0,0}},
-        {{-0.01, -0.01}, {0,0}, {0,0,0,0}},
-        {{ 0.01,  0.01}, {0,0}, {0,0,0,0}},
-    };
-    uint32_t testdata2[] = {0, 1, 2};
-    MeshResource_t testmesh = {
-        .vertdata = testdata, .vertcount = 3,
-        .inddata = testdata2, .indcount = 3,
-        .vertsize = sizeof(UiVertex),
-        0, 0
-    };
-    DrawableCreateInfo testreg = {
-        testmesh, false,
-        MatrixZero()
-    };
-    Drawable testdrawable = CreateDrawable( uidrawer, testreg );
-
     CameraInfo ci = {
         (Vector3){0, 0, 1},
         0, 0,
@@ -413,6 +359,23 @@ int main(){
     camera_set_main_camera( ci );
 
     Vector3 geebin = {0,0,0};
+
+    UiComponentInfo blugg = {
+        .settings = UI_BASE_SETTINGS,
+        .type = UI_PANEL,
+        .panel = {
+            15, 15, 720, 360,
+            .colour={ 0.8, 0.1, 0.25, 1 }
+        }
+    };
+    UiAddComponent( ui, NULL, blugg );
+
+    blugg.panel.x += 100;
+    blugg.panel.y += 100;
+    blugg.panel.colour = (Vector4){0, 0.3, 0.2, 1.0};
+    UiAddComponent( ui, NULL, blugg );
+    
+    UiRedraw( ui );
 
     float timeofday = 0;
     while (AppRunning()){
@@ -505,9 +468,9 @@ int main(){
         );
         
         // ENABLE FOR DAY/NIGHT CYCLE
-        //timeofday += 3.14159 * (0.5 / 60.0);
+        timeofday += 3.14159 * (0.5 / 60.0);
 
-        timeofday = 1;
+        // timeofday = 1;
 
         struct LandPushConst lpc = {
             m,
@@ -517,7 +480,7 @@ int main(){
 
         WindowDraw( landdrawer, &lpc );
         WindowDraw( objdrawer, &m );
-        WindowDraw( uidrawer, 0 );
+        WindowDraw( UiGetDrawer(ui), 0 );
         
         WindowFinishDrawing();
     }

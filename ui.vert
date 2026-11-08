@@ -18,9 +18,12 @@ layout (location = 2) in vec4 v_col;
 
 layout (location = 0) out vec3 f_pos;
 layout (location = 1) out vec2 f_texcoords;
+layout (location = 2) out vec4 f_col;
 
 void main(){
-    gl_Position = vec4(v_pos, 0.0, 1.0);
+    float x = v_pos.x / (1280.0 / 2.0); x -= 1.0;
+    float y = v_pos.y / (720.0 / 2.0); y -= 1.0;
+    gl_Position = vec4(x, y, 0.0, 1.0);
     f_texcoords = v_tex;
-    // f_pos = v_pos;
+    f_col = v_col;
 }

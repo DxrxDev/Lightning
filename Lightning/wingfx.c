@@ -1924,6 +1924,7 @@ Drawer DrawerCreate( DrawerCreateInfo dci ){
         &gfx.drawers[gfx.drawersused-1].pipeline
     );
 
+    currdraw->indcount = 0;
     return &gfx.drawers[gfx.drawersused-1];
 }
 
@@ -2297,7 +2298,7 @@ void WindowDraw( Drawer drawer, void *constdata ){
         printf("updating inds\n");
         drawer->db.memupdated = false;
         RegenerateIndicies( drawer );
-    } 
+    }
     vkCmdBindPipeline( gfx.drawcommand, VK_PIPELINE_BIND_POINT_GRAPHICS, drawer->pipeline );
 
     VkBuffer buffers[] = { drawer->buffers.buffer };
